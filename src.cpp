@@ -22,7 +22,7 @@ void plotBzWithParticles(std::vector<std::vector<std::vector<double>>> Bz,
                          std::vector<std::vector<int>>& particles, 
                          int n) {
     // Nehmen wir an, wir wollen einen 2D-Schnitt von Bz plotten (z.B. Bz[i][j])
-    int slice = 0; // Mittlere Schicht als Beispiel
+    int slice = n/ 2 + 50; // Mittlere Schicht als Beispiel
     std::vector<std::vector<double>> Bz_slice(n, std::vector<double>(n));
    
     // Extrahiere einen 2D-Slice von Bz entlang der z-Achse (Bz[i][j][slice])
@@ -65,8 +65,13 @@ void plotBzWithParticles(std::vector<std::vector<std::vector<double>>> Bz,
     plt::scatter(particle_x, particle_y, 1, {{"color", "black"}});
     // Optional: Hinzufügen eines Colorbars
     //plt::colorbar();  // Optional: füge eine Farblegende hinzu
-    plt::title("Bz Distribution with Particle Positions");
+    //plt::title("Bz Distribution with Particle Positions");
+    // Entferne Achsenticks und Labels
+  
+    plt::axis("off");  // Optional: entfernt auch die Achsenrahmen
+    plt::save("MonteCarlo.pdf",400);
     plt::show();
+
 }
 
 std::vector<std::vector<std::vector<std::complex<double>>>> applyFFT3D(const std::vector<std::vector<std::vector<double>>>& rSpace, int n) {
@@ -112,12 +117,37 @@ std::vector<std::vector<std::vector<std::complex<double>>>> applyFFT3D(const std
     return kSpace;  // Rückgabe des k-space
 }
 
+void shift3DArray(std::vector<std::vector<std::vector<double>>>& array, int n) {
+    std::vector<std::vector<std::vector<double>>> shiftedArray(n,
+        std::vector<std::vector<double>>(n,
+        std::vector<double>(n)));
+
+    // Verschiebe das Array um n/2 in jeder Dimension (periodisch)
+    for (int i = 0; i < n; ++i) {
+        for (int j = 0; j < n; ++j) {
+            for (int k = 0; k < n; ++k) {
+                // Berechne die neuen Indizes mit modulo n (periodische Verschiebung)
+                int new_i = (i + n / 2) % n;
+                int new_j = (j + n / 2) % n;
+                int new_k = (k + n / 2) % n;
+
+                // Verschiebe den Wert in das neue Array
+                shiftedArray[new_i][new_j][new_k] = array[i][j][k];
+            }
+        }
+    }
+
+    // Setze das verschobene Array zurück ins Originalarray
+    array = shiftedArray;
+}
+
 std::vector<std::vector<std::vector<double>>> applyIFFT3D(const std::vector<std::vector<std::vector<std::complex<double>>>>& kSpace, int n, double B0_val) {
     std::vector<std::vector<std::vector<double>>> rSpace(n, std::vector<std::vector<double>>(n, std::vector<double>(n)));
 
     // Erstelle den FFTW-Plan für die inverse 3D-Transformation
     fftw_complex* in = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * n * n * n);
     fftw_complex* out = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * n * n * n);
+
 
     // Übertrage die Daten aus kSpace in das fftw_complex Array
     for (int i = 0; i < n; ++i)
@@ -126,6 +156,8 @@ std::vector<std::vector<std::vector<double>>> applyIFFT3D(const std::vector<std:
                 in[i * n * n + j * n + k][0] = kSpace[i][j][k].real();  // Realteil
                 in[i * n * n + j * n + k][1] = kSpace[i][j][k].imag();  // Imaginärteil
             }
+
+     
 
     // Erstelle den FFTW-Plan für die inverse Transformation
     fftw_plan plan = fftw_plan_dft_3d(n, n, n, in, out, FFTW_BACKWARD, FFTW_ESTIMATE);
@@ -137,7 +169,8 @@ std::vector<std::vector<std::vector<double>>> applyIFFT3D(const std::vector<std:
     for (int i = 0; i < n; ++i)
         for (int j = 0; j < n; ++j)
             for (int k = 0; k < n; ++k) {
-                rSpace[i][j][k] = B0_val * out[i * n * n + j * n + k][0] / (n * n * n);  // Normalisierung
+                double shift = (out[i * n * n + j * n + k][0]);
+                rSpace[i][j][k] = B0_val * shift / (n * n * n);  // Normalisierung
             }
 
     // Plan und Speicher freigeben
@@ -203,13 +236,14 @@ std::vector<std::vector<int>> GetALL_positions(int xlen, int ylen, int zlen, int
 
                 // Check if the position is already occupied
                 is_unique = !isElement(Occupied_positions, new_position);
+                
             }
 
             #pragma omp critical
             {   
                 positions.push_back(new_position);  // Add the unique position to the results
             }
-        }
+        } 
     }
 
     return positions;
@@ -218,7 +252,7 @@ std::vector<std::vector<int>> GetALL_positions(int xlen, int ylen, int zlen, int
 class Artifact {
     public:
         std::vector<int> positionmain_;
-        double suscept_;
+        double suscept_, totsuscept_;
         int size_;
         std::vector<std::vector<int>> positions_;
 
@@ -229,6 +263,7 @@ class Artifact {
             int y0 = positionmain_[1];
             int z0 = positionmain_[2];
             int radius = size;
+            suscept_ = suscept;
 
             for (int x = -size; x < size; x++) {
                 for (int y = -size; y < size; y++) {
@@ -245,7 +280,7 @@ class Artifact {
                     }
                 }
             }
-            suscept_ = pm * suscept * positions_.size();
+            totsuscept_ = pm * suscept_ * positions_.size();
         }
 };
 
@@ -272,7 +307,9 @@ class Voxel {
         int numberofprotons_;
         double B0_val_;
         double dt_;
+        double nb_ = static_cast<double>(n_);
         double D_;
+        double Vm_ = 1 / (nb_ * nb_ * nb_);
 
         std::vector<double> B0_;
         std::vector<std::vector<std::vector<double>>> dz_;
@@ -288,9 +325,9 @@ class Voxel {
         Voxel(int n, double L, int SIZE_arti, double DeltaChi, int N, int numberofprotons, std::vector<double> B0, double dt): 
             n_(n), L_(L), SIZE_arti_(SIZE_arti), DeltaChi_(DeltaChi), N_(N),numberofprotons_(numberofprotons), B0_(B0), dt_(dt) {
 
+            std::cout << "\nSIMULATOR\n\nInitialize Voxel..." << std::endl;
 
             D_ = 0; 
-            dt_ = 0.0001;
             dz_ = std::vector<std::vector<std::vector<double>>>(n, 
                 std::vector<std::vector<double>>(n, 
                 std::vector<double>(n, 0.0)));
@@ -303,6 +340,7 @@ class Voxel {
                 std::vector<std::vector<double>>(n, 
                 std::vector<double>(n, 0.0)));
 
+            std::cout << "Calculate Dz-Map..." << std::endl;
             CalculateDzMap();
 
             std::random_device rd;  // Seed generator
@@ -311,7 +349,7 @@ class Voxel {
             std::uniform_int_distribution<int> dist(0, n_);
             std::vector<int> pos;
             
-
+            std::cout << "Create Susceptibility Artifacts..." << std::endl;
             for (int i = 0; i < N; i++) {
                 pos = {dist(gen), dist(gen), dist(gen)};
                 artifacts.push_back(Artifact(pos, 1, SIZE_arti_, DeltaChi_, n_));
@@ -329,11 +367,11 @@ class Voxel {
                 }
             }
 
+            std::cout << "Convolve Dipole Kernel with X-map..." << std::endl;
             auto Chimapk_ = applyFFT3D(ChiMap_, n_);
             auto Dk_ = applyFFT3D(dz_, n_);
 
             //print3DVector(convertComplexToDouble(Dk_));
-
             //print3DVector(convertComplexToDouble(Dk_));
 
             auto multip_ = Dk_;
@@ -349,11 +387,16 @@ class Voxel {
             
             B0_val_ = 3.0;
             Bz_ = applyIFFT3D(multip_,n_, B0_val_);
+            
+            std::cout << "Initialize Protons..." << std::endl;
 
             ALL_positions_ = GetALL_positions(n_,n_,n_,numberofprotons_, Occupied_positions_);
             ALL_positions_init_ = ALL_positions_;
-            plotBzWithParticles(Bz_,Occupied_positions_, n_);
-            plotBzWithParticles(ChiMap_,Occupied_positions_, n_);
+
+            shift3DArray(Bz_, n_);
+            //plotBzWithParticles(Bz_,ALL_positions_, n_);
+            //plotBzWithParticles(ChiMap_,ALL_positions_, n_);
+            std::cout << "\nVoxel Initialization Done\n" << std::endl;
         }
 
       
@@ -364,14 +407,14 @@ class Voxel {
             for (int y = -n_ / 2; y < n_/2; y++) {
                 for (int z = -n_ / 2; z < n_ / 2; z++) {
                    
-                    std::vector<int> position = {x, y, z};
-        
+                    std::vector<double> position = {x / nb_, y / nb_, z / nb_};
+
                     double r = sqrt(position[0] * position[0] + position[1] * position[1] + position[2] * position[2]);
                     double B0b = sqrt(B0_[0] * B0_[0] + B0_[1] * B0_[1] + B0_[2] * B0_[2]);
-
+                    
                     double costheta = (B0_[0] * position[0] + B0_[1] * position[1] + B0_[2] * position[2]) / (B0b * r);
                     double dz = (1.0f / (4.0f * M_PI)) * ((3 * costheta * costheta - 1) / (r * r * r));
-
+                    
                     if(r == 0) dz_[x + n_ / 2][y + n_/2][z + n_/2] = 0;
                     else   dz_[x + n_ / 2][y + n_/2][z + n_/2] += dz;
                     
@@ -382,7 +425,6 @@ class Voxel {
     
 
     std::complex<double> SimulateDiffusionSteps(int NrOfSteps) {
-        
         std::random_device rd;
         std::mt19937 gen(rd());
         std::normal_distribution<> dis(0,std::sqrt(2 * D_ * dt_));
@@ -428,7 +470,6 @@ class Voxel {
         totalPhase = 0; 
     
         for(int i = 0; i < numberofprotons_; i++) { 
-
             double phase = 0;  // Startwert 1 + 0i
 
             for (int j = 0; j < NrOfSteps; j++) {
@@ -456,7 +497,6 @@ class Voxel {
 
 
     std::complex<double> ComputeSignalStatic(double t) { 
-        std::vector<std::complex<double>> phases;
         static int x,y,z;
         std::complex<double> phase, totalPhase;
         double omega;
@@ -470,16 +510,16 @@ class Voxel {
             
             omega = GAMMA * Bz_[x][y][z]; 
             phase = std::exp(std::complex<double>(0, -omega * t));
-            phases.push_back(phase);
-            totalPhase += phase;
+            totalPhase += phase  / static_cast<double>(numberofprotons_);
             
 
         }
         
-        return totalPhase / static_cast<double>(numberofprotons_);
+        
+        return totalPhase;
+
     }
 
-    
 
 };
 
@@ -491,10 +531,12 @@ int main() {
     int n = 300;  //grid points 
     int numberofprotons = 1e4;
     double L = 1.0f; // voxelsize
-    int SIZE_arti = 10; // sizeof artifact
-    double DeltaChi = 1e-9;
-    int N = 100; //numberofartifatcs
-    double dt = 0.001;
+    int SIZE_arti = 2; // sizeof artifact
+    double DeltaChi =5e-12;
+    int N = 5000; //numberfartifatcs
+    double dt = 0.0001;
+    double nd = static_cast<double>(n);
+    double Vm = 1 / (nd * nd * nd);
     
 
 
@@ -502,18 +544,19 @@ int main() {
     Voxel voxel(n, L, SIZE_arti, DeltaChi, N, numberofprotons, B0, dt);
 
 
-    double eta = N * pow((SIZE_arti / static_cast<double>(n)),3) * M_PI * 4 /3;
+    double eta = voxel.Occupied_positions_.size() * Vm;
     double xtot = voxel.Occupied_positions_.size() * DeltaChi;
     double R2p = (2 * M_PI) * eta * GAMMA * 3 * xtot / (9 * std::sqrt(3));
 
     std::cout << "Volume Fraction: " << eta  << std::endl;
     std::cout << "Voxel Suszept: " << xtot<< std::endl;
+    std::cout << "R2p " << R2p << std::endl;
     std::vector<double> magnitudes;
     std::vector<double> times;
     std::vector<double> signal;
     std::vector<double> star;
 
-    for(int t = 0; t < 100; t++){
+    for(int t = 0; t < 1000; t++){
         std::cout << "Timestep: " << t*dt << std::endl;
         signal.push_back(std::abs(voxel.SimulateDiffusionSteps(10)));
         magnitudes.push_back(std::abs(voxel.ComputeSignalStatic(t * dt)));
@@ -532,6 +575,7 @@ int main() {
     plt::ylabel("Signal");
     plt::title("Signal Decay over Time");
     plt::legend();
+
     plt::grid(true);
     
     // Anzeige des Plots
