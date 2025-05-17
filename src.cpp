@@ -3,19 +3,19 @@
 #include <cmath>
 #include <stdio.h>
 #include <fftw3.h>
+#include <unordered_set>
 #include <omp.h>
 #include <ctime>
 #include <random>
 #include <complex>
-
 #include <matplotlib-cpp/matplotlibcpp.h>
+#include <atomic>
 
 #define GAMMA 267522187
 
  // Set the number of threads you want to use
 
 namespace plt = matplotlibcpp;
-
 
 
 void plotBzWithParticles(std::vector<std::vector<std::vector<double>>> Bz, 
@@ -28,7 +28,7 @@ void plotBzWithParticles(std::vector<std::vector<std::vector<double>>> Bz,
     // Extrahiere einen 2D-Slice von Bz entlang der z-Achse (Bz[i][j][slice])
     for (int i = 0; i < n; ++i) {
         for (int j = 0; j < n; ++j) {
-            Bz_slice[i][j] = Bz[j][i][slice]; // Slice durch die dritte Dimension
+            Bz_slice[i][j] = Bz[slice][j][i]; // Slice durch die dritte Dimension
         }
     }
 
@@ -73,6 +73,15 @@ void plotBzWithParticles(std::vector<std::vector<std::vector<double>>> Bz,
     plt::show();
 
 }
+
+struct TupleHash {
+    std::size_t operator()(const std::tuple<int,int,int>& t) const {
+        auto h1 = std::hash<int>{}(std::get<0>(t));
+        auto h2 = std::hash<int>{}(std::get<1>(t));
+        auto h3 = std::hash<int>{}(std::get<2>(t));
+        return h1 ^ (h2 << 1) ^ (h3 << 2);  // einfache Hash-Kombination
+    }
+};
 
 std::vector<std::vector<std::vector<std::complex<double>>>> applyFFT3D(const std::vector<std::vector<std::vector<double>>>& rSpace, int n) {
     std::vector<std::vector<std::vector<std::complex<double>>>> kSpace(n, std::vector<std::vector<std::complex<double>>>(n, std::vector<std::complex<double>>(n)));
@@ -202,48 +211,48 @@ bool isElement(std::vector<std::vector<int>>& outer, std::vector<int>& inner) {
     return false;
 }
 
-
-std::vector<std::vector<int>> GetALL_positions(int xlen, int ylen, int zlen, int num_positions, std::vector<std::vector<int>> Occupied_positions) {
-    std::vector<std::vector<int>> positions;
-    positions.reserve(num_positions);  // Reserve space for the positions
+std::vector<std::vector<int>> GetALL_positions(int xlen, int ylen, int zlen, int num_positions, const std::unordered_set<std::tuple<int,int,int>, TupleHash>& Occupied_positions){
+    std::unordered_set<std::tuple<int,int,int>, TupleHash> positions_set;
+    positions_set.reserve(num_positions + Occupied_positions.size());
 
     std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<double> dist_x(-xlen /2 + 1, xlen / 2 - 1);
-    std::uniform_real_distribution<double> dist_y(- ylen/ 2 + 1, ylen / 2 - 1);
-    std::uniform_real_distribution<double> dist_z(-zlen / 2 + 1, zlen / 2- 1);
 
     #pragma omp parallel
     {
         std::mt19937 thread_gen(rd() + omp_get_thread_num());
-        std::uniform_real_distribution<double> thread_dist_x(-xlen /2 + 1, xlen /2 - 1);
-        std::uniform_real_distribution<double> thread_dist_y(-ylen / 2 + 1, ylen / 2 - 1);
-        std::uniform_real_distribution<double> thread_dist_z(-zlen / 2 + 1, zlen / 2 - 1);
+        std::uniform_real_distribution<double> dist_x(-xlen / 2 + 1, xlen / 2 - 1);
+        std::uniform_real_distribution<double> dist_y(-ylen / 2 + 1, ylen / 2 - 1);
+        std::uniform_real_distribution<double> dist_z(-zlen / 2 + 1, zlen / 2 - 1);
 
         #pragma omp for
-        for (int i = 0; i < num_positions; i++) {
-            std::vector<int> new_position;
+        for (int i = 0; i < num_positions; ++i) {
+            std::tuple<int,int,int> new_position;
             bool is_unique = false;
 
             while (!is_unique) {
-                // Generate a new random position
-                new_position = {
-                    static_cast<int>(std::round(thread_dist_x(thread_gen))),
-                    static_cast<int>(std::round(thread_dist_y(thread_gen))),
-                    static_cast<int>(std::round(thread_dist_z(thread_gen)))
-                };
+                int x = static_cast<int>(std::round(dist_x(thread_gen)));
+                int y = static_cast<int>(std::round(dist_y(thread_gen)));
+                int z = static_cast<int>(std::round(dist_z(thread_gen)));
 
+                new_position = std::make_tuple(x, y, z);
 
-                // Check if the position is already occupied
-                is_unique = !isElement(Occupied_positions, new_position);
-                
+                if (Occupied_positions.find(new_position) == Occupied_positions.end() &&
+                    positions_set.find(new_position) == positions_set.end())
+                {
+                    is_unique = true;
+                }
             }
 
             #pragma omp critical
-            {   
-                positions.push_back(new_position);  // Add the unique position to the results
-            }
-        } 
+            positions_set.insert(new_position);
+        }
+    }
+
+    // Jetzt in vector<vector<int>> umwandeln:
+    std::vector<std::vector<int>> positions;
+    positions.reserve(positions_set.size());
+    for (const auto& pos : positions_set) {
+        positions.push_back({std::get<0>(pos), std::get<1>(pos), std::get<2>(pos)});
     }
 
     return positions;
@@ -284,18 +293,64 @@ class Artifact {
         }
 };
 
-std::vector<std::vector<int>> GetOccupiedPositions(std::vector<Artifact>& artifacts) {
-    std::vector<std::vector<int>> all_positions;
+std::unordered_set<std::tuple<int,int,int>, TupleHash> GetOccupiedPositions(const std::vector<Artifact>& artifacts) {
+    int num_threads = omp_get_max_threads();
+    std::vector<std::unordered_set<std::tuple<int,int,int>, TupleHash>> thread_sets(num_threads);
 
-    // Iterate through all artifacts and collect positions
-    for (const auto& artifact : artifacts) {
-        for (const auto& pos : artifact.positions_) {
-            all_positions.push_back(pos);
+    const size_t total = artifacts.size();
+    std::atomic<size_t> processed_count(0);
+    std::atomic<int> last_percent(-1); // Damit 0% auch ausgegeben wird
+
+    #pragma omp parallel
+    {
+        int tid = omp_get_thread_num();
+        auto& local_set = thread_sets[tid];
+
+        #pragma omp for schedule(dynamic, 1)
+        for (size_t i = 0; i < total; ++i) {
+            for (const auto& pos : artifacts[i].positions_) {
+                if (pos.size() == 3) {
+                    local_set.emplace(pos[0], pos[1], pos[2]);
+                }
+            }
+
+            // Fortschritt zählen
+            size_t current = ++processed_count;
+            int percent = static_cast<int>((100.0 * current) / total);
+            if (percent > last_percent) {
+                last_percent = percent;
+                #pragma omp critical
+                std::cout << "\rFortschritt: " << percent << "% (" << current << "/" << total << ")" << std::flush;
+            }
         }
     }
 
-    return all_positions;
+    std::cout << "\n";
+
+    // Alles in ein Set zusammenführen
+    std::unordered_set<std::tuple<int,int,int>, TupleHash> occupiedSet;
+    size_t estimated_total = 0;
+    for (const auto& s : thread_sets) estimated_total += s.size();
+    occupiedSet.reserve(estimated_total);
+
+    for (const auto& s : thread_sets) {
+        occupiedSet.insert(s.begin(), s.end());
+    }
+
+    return occupiedSet;
 }
+
+
+class Proton {
+    public:
+        std::vector<int> position_;
+        std::complex<double> phase_;
+        std::vector<std::vector<int>> TrackPostitions_;
+        std::vector<std::complex<double>> TrackPhases;
+
+        Proton(const std::vector<int>& position)
+        : position_(position), phase_(1.0, 0.0) {}
+};
 
 class Voxel {
     public:
@@ -307,17 +362,21 @@ class Voxel {
         int numberofprotons_;
         double B0_val_;
         double dt_;
-        double nb_ = static_cast<double>(n_);
         double D_;
+        double nb_ = static_cast<double>(n_);
+   
         double Vm_ = 1 / (nb_ * nb_ * nb_);
 
         std::vector<double> B0_;
         std::vector<std::vector<std::vector<double>>> dz_;
         std::vector<std::vector<std::vector<double>>> ChiMap_;
         std::vector<std::vector<std::vector<double>>> Bz_;
-        std::vector<std::vector<int>> ALL_positions_, ALL_positions_init_;
-        std::vector<std::vector<int>> Occupied_positions_;
+        std::vector<std::vector<int>> ALL_positions_;
+       
+        std::unordered_set<std::tuple<int,int,int>, TupleHash> Occupied_positions_;
+        std::vector<Proton> Protons_, Protons_init_;
 
+        
         fftw_complex* dz_fftw_;
         fftw_complex* ChiMap_fftw_;
         fftw_complex* Bz_fftw_;
@@ -327,7 +386,7 @@ class Voxel {
 
             std::cout << "\nSIMULATOR\n\nInitialize Voxel..." << std::endl;
 
-            D_ = 0; 
+            D_ = 4e-1; 
             dz_ = std::vector<std::vector<std::vector<double>>>(n, 
                 std::vector<std::vector<double>>(n, 
                 std::vector<double>(n, 0.0)));
@@ -348,7 +407,8 @@ class Voxel {
             std::vector<Artifact> artifacts;
             std::uniform_int_distribution<int> dist(0, n_);
             std::vector<int> pos;
-            
+
+
             std::cout << "Create Susceptibility Artifacts..." << std::endl;
             for (int i = 0; i < N; i++) {
                 pos = {dist(gen), dist(gen), dist(gen)};
@@ -391,16 +451,85 @@ class Voxel {
             std::cout << "Initialize Protons..." << std::endl;
 
             ALL_positions_ = GetALL_positions(n_,n_,n_,numberofprotons_, Occupied_positions_);
-            ALL_positions_init_ = ALL_positions_;
+
+            for (int i = 0; i < numberofprotons_; i++) {
+                Protons_.push_back(Proton(ALL_positions_[i]));
+            }
+
+            Protons_init_ = Protons_;
 
             shift3DArray(Bz_, n_);
             //plotBzWithParticles(Bz_,ALL_positions_, n_);
             //plotBzWithParticles(ChiMap_,ALL_positions_, n_);
             std::cout << "\nVoxel Initialization Done\n" << std::endl;
+
+            
         }
+  
 
-      
-
+    void SaveEveryEntry(std::vector<std::vector<std::vector<double>>> array) {
+            // Get the dimensions of the array
+            int x = array.size();
+            int y = array[0].size();
+            int z = array[0][0].size();
+        
+            // Flatten the 3D array into a 1D vector
+            std::vector<double> flattened;
+        
+            for (int i = 0; i < x; ++i) {
+                for (int j = 0; j < y; ++j) {
+                    for (int k = 0; k < z; ++k) {
+                        flattened.push_back(array[i][j][k]);
+                    }
+                }
+            }
+        
+            // Size of the flattened array
+            size_t N = flattened.size();
+        
+            // Create FFTW arrays
+            fftw_complex* in = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * N);
+            fftw_complex* out = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * N);
+        
+            // Copy flattened data into FFTW input array (real part only, imaginary part is set to 0)
+            for (size_t i = 0; i < N; ++i) {
+                in[i][0] = flattened[i];  // Real part
+                in[i][1] = 0;             // Imaginary part
+            }
+        
+            // Perform the FFT using FFTW
+            fftw_plan p = fftw_plan_dft_1d(N, in, out, FFTW_FORWARD, FFTW_ESTIMATE);
+            fftw_execute(p);
+        
+            // Prepare the frequency and magnitude for plotting
+            std::vector<double> frequencies(N);
+            std::vector<double> magnitude(N);
+        
+            for (size_t i = 0; i < N; ++i) {
+                // Frequency
+                frequencies[i] = static_cast<double>(i);
+                
+                // Magnitude (square root of the sum of squares of real and imaginary parts)
+                magnitude[i] = sqrt(out[i][0] * out[i][0] + out[i][1] * out[i][1]);
+            }
+            
+            std::rotate(frequencies.begin(), frequencies.begin() + N / 2, frequencies.end());
+            std::rotate(magnitude.begin(), magnitude.begin() + N / 2, magnitude.end());
+        
+            // Plot the FFT result
+            plt::figure_size(800, 600);
+            plt::plot(frequencies, magnitude);
+            plt::title("Fourier Transform of Flattened Array");
+            plt::xlabel("Frequency");
+            plt::ylabel("Magnitude");
+            plt::show();
+        
+            // Clean up FFTW resources
+            fftw_destroy_plan(p);
+            fftw_free(in);
+            fftw_free(out);
+        }
+    
     void CalculateDzMap() {
         #pragma omp parallel for collapse(3)
         for (int x = -n_ / 2; x < n_/2; x++) {
@@ -422,79 +551,103 @@ class Voxel {
                 }
             }
         }
-    
 
-    std::complex<double> SimulateDiffusionSteps(int NrOfSteps) {
+    std::complex<double> SimulateDiffusionSteps(int NrOfSteps, double t) {
+       
         std::random_device rd;
         std::mt19937 gen(rd());
-        std::normal_distribution<> dis(0,std::sqrt(2 * D_ * dt_));
+
+        double dtM_ = dt_ / static_cast<double>(NrOfSteps);
+
+        std::normal_distribution<> dis(0,std::sqrt(2 * D_ * dtM_));
 
       
-        std::vector<std::vector<std::vector<double>>> Paths(ALL_positions_.size(), 
+        std::vector<std::vector<std::vector<double>>> Paths(numberofprotons_, 
                                                             std::vector<std::vector<double>>(3, std::vector<double>(NrOfSteps, 0.0)));
 
-       
+         
         #pragma omp parallel for
-        for (int i = 0; i < ALL_positions_.size(); i++) {
-            std::vector<int> position = ALL_positions_[i]; 
+        for (size_t i = 0; i < numberofprotons_; i++) {
+            std::vector<int> position = Protons_[i].position_;
+            std::tuple<int,int,int> candidate;
+
             for (int step = 0; step < NrOfSteps; ++step) {
+                bool collision;
                 
-                double dx = dis(gen) * n_;
-                double dy = dis(gen) * n_;
-                double dz = dis(gen) * n_;
-            
-            
-                position[0] += std::round(dx);
-                position[1] += std::round(dy);
-                position[2] += std::round(dz);
-
-
-                position[0] = ((position[0] + n_/2) % n_ + n_) % n_ - n_/2;
-                position[1] = ((position[1] + n_/2) % n_ + n_) % n_ - n_/2;
-                position[2] = ((position[2] + n_/2) % n_ + n_) % n_ - n_/2;
-               
+                do {
+                    double dx = dis(gen) * n_;
+                    double dy = dis(gen) * n_;
+                    double dz = dis(gen) * n_;
+        
+                    int newX = position[0] + std::round(dx);
+                    int newY = position[1] + std::round(dy);
+                    int newZ = position[2] + std::round(dz);
+        
+                    // Periodic boundary conditions
+                    newX = ((newX + n_/2) % n_ + n_) % n_ - n_/2;
+                    newY = ((newY + n_/2) % n_ + n_) % n_ - n_/2;
+                    newZ = ((newZ + n_/2) % n_ + n_) % n_ - n_/2;
+        
+                    candidate = std::make_tuple(newX, newY, newZ);
+        
+                    // Prüfen, ob Position besetzt
+                    collision =  (Occupied_positions_.find(candidate) != Occupied_positions_.end());
+        
+                    // Wenn collision == true, wird while nochmal ausgeführt und neuer Schritt probiert
+                } while (collision);
+        
+                // freie Position gefunden -> setzen
+                position[0] = std::get<0>(candidate);
+                position[1] = std::get<1>(candidate);
+                position[2] = std::get<2>(candidate);
+              
+        
                 Paths[i][0][step] = position[0];
                 Paths[i][1][step] = position[1];
                 Paths[i][2][step] = position[2];
             }
-
-            ALL_positions_[i] = {position[0],position[1],position[2]};
-    
+        
+            // Partikelposition aktualisieren
+            Protons_[i].position_ = {position[0], position[1], position[2]};
+            Protons_[i].TrackPostitions_.push_back(Protons_[i].position_);
+            
         }   
 
         
         int x,y,z;
-        std::complex<double> totalPhase, phaseExp;
+        std::complex<double> totalPhase;
         double omega;
-        std::vector<std::complex<double>> phases;
         totalPhase = 0; 
-    
-        for(int i = 0; i < numberofprotons_; i++) { 
-            double phase = 0;  // Startwert 1 + 0i
+        std::cout << "Calculate Phase..." << std::endl;  
 
+        for(int i = 0; i < numberofprotons_; i++) { 
+              // Startwert 1 + 0i
             for (int j = 0; j < NrOfSteps; j++) {
+                
                 x = static_cast<int>(Paths[i][0][j] + n_ / 2);
                 y = static_cast<int>(Paths[i][1][j] + n_ / 2);
                 z = static_cast<int>(Paths[i][2][j] + n_ / 2);
                 
-                omega = GAMMA * Bz_[x][y][z];
-                phase += omega * dt_;
+                omega = GAMMA * (Bz_[x][y][z] + B0_val_);
+                
+                Protons_[i].phase_ *= std::exp(std::complex<double>(0,- omega *  dtM_));
+                
             }
+            //Protons_[i].TrackPhases.push_back(Protons_[i].phase_);
+           
+            totalPhase += Protons_[i].phase_;
 
-            phaseExp = std::exp(std::complex<double>(0,phase));
-            phases.push_back(phaseExp);
-            totalPhase += phaseExp;
             
         }
 
+        std::vector<int> position = ALL_positions_[20];
+        
+        std::cout << "Position:  " << position[0] << " " << position[1] << " " << position[2] << std::endl;
         totalPhase = totalPhase / static_cast<double>(numberofprotons_);
      
-       
-
         return totalPhase;
 
     }
-
 
     std::complex<double> ComputeSignalStatic(double t) { 
         static int x,y,z;
@@ -503,20 +656,22 @@ class Voxel {
         totalPhase = 0; 
      
         for(int i = 0; i < numberofprotons_; i++) { 
-            x = static_cast<int>(ALL_positions_init_[i][0] + n_ / 2);
-            y = static_cast<int>(ALL_positions_init_[i][1] + n_ / 2);
-            z = static_cast<int>(ALL_positions_init_[i][2] + n_ / 2);
+            x = static_cast<int>(ALL_positions_[i][0] + n_ / 2);
+            y = static_cast<int>(ALL_positions_[i][1] + n_ / 2);
+            z = static_cast<int>(ALL_positions_[i][2] + n_ / 2);
 
             
-            omega = GAMMA * Bz_[x][y][z]; 
+            omega = GAMMA * (Bz_[x][y][z] + B0_val_); 
+         
             phase = std::exp(std::complex<double>(0, -omega * t));
-            totalPhase += phase  / static_cast<double>(numberofprotons_);
+            totalPhase += phase;
+             
             
 
         }
         
         
-        return totalPhase;
+        return totalPhase / static_cast<double>(numberofprotons_);;
 
     }
 
@@ -524,29 +679,26 @@ class Voxel {
 };
 
 
-
-
 int main() {
-    omp_set_num_threads(10); 
-    int n = 300;  //grid points 
+    omp_set_num_threads(20); 
+    int n = 500;  //grid points 
     int numberofprotons = 1e4;
     double L = 1.0f; // voxelsize
-    int SIZE_arti = 2; // sizeof artifact
-    double DeltaChi =5e-12;
-    int N = 5000; //numberfartifatcs
+    int SIZE_arti = 10; // sizeof artifact
+    double DeltaChi =5e-15;
+    int N = 2000; //numberfartifatcs
     double dt = 0.0001;
     double nd = static_cast<double>(n);
     double Vm = 1 / (nd * nd * nd);
     
 
-
-    std::vector<double> B0 = {1.0f, 0.0f, 0.0f};  // External magnetic field
+    std::vector<double> B0 = {0.0f, 0.0f, 3.0f};  // External magnetic field
     Voxel voxel(n, L, SIZE_arti, DeltaChi, N, numberofprotons, B0, dt);
 
 
     double eta = voxel.Occupied_positions_.size() * Vm;
-    double xtot = voxel.Occupied_positions_.size() * DeltaChi;
-    double R2p = (2 * M_PI) * eta * GAMMA * 3 * xtot / (9 * std::sqrt(3));
+    double xtot = voxel.Occupied_positions_.size() * DeltaChi;  
+    double R2p = (8 * M_PI*M_PI) * eta * GAMMA * 3 * xtot / (9 * std::sqrt(3));
 
     std::cout << "Volume Fraction: " << eta  << std::endl;
     std::cout << "Voxel Suszept: " << xtot<< std::endl;
@@ -555,39 +707,33 @@ int main() {
     std::vector<double> times;
     std::vector<double> signal;
     std::vector<double> star;
+    double inter, stat;
 
+        
     for(int t = 0; t < 1000; t++){
-        std::cout << "Timestep: " << t*dt << std::endl;
-        signal.push_back(std::abs(voxel.SimulateDiffusionSteps(10)));
-        magnitudes.push_back(std::abs(voxel.ComputeSignalStatic(t * dt)));
-        times.push_back(t * dt);
-        star.push_back(std::exp(-R2p * t * dt));
-        //std::cout << voxel.ALL_positions_[0][0] << std::endl;
+        inter = std::abs(voxel.SimulateDiffusionSteps(10, t * dt));
+        stat = std::abs(voxel.ComputeSignalStatic(t * dt));
 
+        std::cout << "Timestep: " << t*dt << "  Diffusion: " << inter << " Static Dephasing: " << stat << "  Analytic: " << std::exp(- R2p * t * dt) << std::endl;
+
+        signal.push_back(inter);
+        magnitudes.push_back(stat);
+        times.push_back(t * dt);
+        star.push_back(std::exp(- R2p * t * dt));
     }
 
-    plt::figure_size(800, 600);
-    plt::plot(times, signal);  // Blaue Linie für Simulation
-    plt::plot(times, magnitudes);  // Rote gestrichelte Linie
+    //voxel.SaveEveryEntry(voxel.Bz_);
+    plotBzWithParticles(voxel.Bz_, voxel.ALL_positions_, voxel.n_);
+
+    plt::plot(times, magnitudes);
+    plt::plot(times, signal);
     plt::plot(times, star);
-    // Achsenbeschriftung & Titel
-    plt::xlabel("Time (s)");
-    plt::ylabel("Signal");
-    plt::title("Signal Decay over Time");
-    plt::legend();
-
-    plt::grid(true);
-    
-    // Anzeige des Plots
+    plt::xlabel("Time");
+    plt::ylabel("Magnitude");
+    plt::title("Signal decay over time");
+ 
     plt::show();
-    
-    
-    
-   
 
-    // Initialize artifacts
-
-    
 
     return 0;
 }
