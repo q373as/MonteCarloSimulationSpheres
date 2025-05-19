@@ -135,8 +135,13 @@ void shift3DArray(std::vector<std::vector<std::vector<double>>>& array, int n) {
     array = shiftedArray;
 }
 
-bool isElement(const std::set<std::vector<int>>& s, const std::vector<int>& v) {
-    return s.find(v) != s.end();
+bool isElement(const std::set<std::vector<int>>& s, const std::vector<double>& v) {
+    std::vector<int> v_rounded;
+    v_rounded.reserve(v.size());
+    for (double val : v) {
+        v_rounded.push_back(static_cast<int>(std::round(val)));
+    }
+    return s.find(v_rounded) != s.end();
 }
 
 void SaveSignalDecay(const std::vector<double>& times, const std::vector<double>& magnitudes, const std::vector<double>& signal, const std::vector<double>& star, std::string filename)

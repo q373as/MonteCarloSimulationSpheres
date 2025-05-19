@@ -21,7 +21,7 @@ int main() {
     double R2p = (8 * M_PI*M_PI) * eta * GAMMA * 3 * xtot / (9 * std::sqrt(3));
 
     std::cout << "Volume Fraction: " << eta  << std::endl;
-    std::cout << "Voxel Suszept: " << xtot<< std::endl;
+    std::cout << "Voxel Suszept: " << xtot << std::endl;
     std::cout << "R2p " << R2p << std::endl;
     std::vector<double> magnitudes;
     std::vector<double> times;

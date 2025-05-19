@@ -34,7 +34,7 @@ std::vector<std::vector<std::vector<double>>> applyIFFT3D(const std::vector<std:
 
 void shift3DArray(std::vector<std::vector<std::vector<double>>>& array, int n);
 
-bool isElement(const std::set<std::vector<int>>& s, const std::vector<int>& v);
+bool isElement(const std::set<std::vector<int>>& s, const std::vector<double>& v);
 
 void SaveSignalDecay(const std::vector<double>& times, const std::vector<double>& magnitudes, const std::vector<double>& signal, const std::vector<double>& star, std::string filename);
 

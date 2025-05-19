@@ -7,7 +7,7 @@
 #define GAMMA 267522187
 
 
-Proton::Proton(const std::vector<int>& position): position_(position), phase_(1.0, 0.0) {};
+Proton::Proton(const std::vector<double>& position): position_(position), phase_(1.0, 0.0) {};
 
 Artifact::Artifact(std::vector<int> positionmain, int pm, int size, double suscept, int n) {
     positionmain_ = positionmain;
@@ -146,6 +146,30 @@ void Voxel::CalculateDzMap() {
         }
     }
 
+double Voxel::interpolateBz(double x, double y, double z) {
+    int x0 = static_cast<int>(std::floor(x)) % n_;
+    int x1 = (x0 + 1) % n_;
+
+    int y0 = static_cast<int>(std::floor(y)) % n_;
+    int y1 = (y0 + 1) % n_;
+
+    int z0 = static_cast<int>(std::floor(z)) % n_;
+    int z1 = (z0 + 1) % n_;
+
+
+    double xd = x - x0, yd = y - y0, zd = z - z0;
+
+    double c00 = Bz_[x0][y0][z0] * (1 - xd) + Bz_[x1][y0][z0] * xd;
+    double c01 = Bz_[x0][y0][z1] * (1 - xd) + Bz_[x1][y0][z1] * xd;
+    double c10 = Bz_[x0][y1][z0] * (1 - xd) + Bz_[x1][y1][z0] * xd;
+    double c11 = Bz_[x0][y1][z1] * (1 - xd) + Bz_[x1][y1][z1] * xd;
+
+    double c0 = c00 * (1 - yd) + c10 * yd;
+    double c1 = c01 * (1 - yd) + c11 * yd;
+
+    return c0 * (1 - zd) + c1 * zd;
+}
+
 std::complex<double> Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {
 
         std::random_device rd;
@@ -162,9 +186,8 @@ std::complex<double> Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {
 
         #pragma omp parallel for
         for (size_t i = 0; i < numberofprotons_; i++) {
-            std::vector<int> position = Protons_[i].position_;
-            std::vector<int> candidatePos(3);
-            //(std::cout << "Proton: " << i << std::endl;
+            std::vector<double> position = Protons_[i].position_;
+            std::vector<double> candidatePos(3);
             
             for (int step = 0; step < NrOfSteps; ++step) {
                 bool collision;
@@ -174,29 +197,30 @@ std::complex<double> Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {
                     double dy = dis(gen) * n_ / L_;
                     double dz = dis(gen) * n_ / L_;
         
-                    int newX = position[0] + std::round(dx);
-                    int newY = position[1] + std::round(dy);
-                    int newZ = position[2] + std::round(dz);
+                    candidatePos[0] = position[0] + dx;
+                    candidatePos[1] = position[1] + dy;
+                    candidatePos[2] = position[2] + dz;
         
-                    // Periodic boundary conditions
-                    newX = ((newX + n_/2) % n_ + n_) % n_ - n_/2;
-                    newY = ((newY + n_/2) % n_ + n_) % n_ - n_/2;
-                    newZ = ((newZ + n_/2) % n_ + n_) % n_ - n_/2;
+                    // Periodische Randbedingungen für double Werte
+                    auto wrap = [this](double val) -> double {
+                        double halfN = n_ / 2.0;
+                        double res = std::fmod(val + halfN, n_);
+                        if (res < 0) res += n_;
+                        return res - halfN;
+                    };
         
-                    candidatePos[0] = newX;
-                    candidatePos[1] = newY;
-                    candidatePos[2] = newZ;
+                    candidatePos[0] = wrap(candidatePos[0]);
+                    candidatePos[1] = wrap(candidatePos[1]);
+                    candidatePos[2] = wrap(candidatePos[2]);
+        
                    
-                    // Prüfen, ob Position besetzt
+        
                     collision = isElement(Occupied_positions_, candidatePos);
         
-                    // Wenn collision == true, wird while nochmal ausgeführt und neuer Schritt probiert
                 } while (collision);
         
-                // freie Position gefunden -> setzen
-                position[0] = candidatePos[0];
-                position[1] = candidatePos[1];
-                position[2] = candidatePos[2];
+                // freie Position gefunden -> setzen (mit double-Werten)
+                position = candidatePos;
         
                 Paths[i][0][step] = position[0];
                 Paths[i][1][step] = position[1];
@@ -204,43 +228,37 @@ std::complex<double> Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {
             }
         
             // Partikelposition aktualisieren
-            Protons_[i].position_[0] = position[0]; 
-            Protons_[i].position_[1] = position[1];
-            Protons_[i].position_[2] = position[2];
-            Protons_[i].TrackPostitions_.push_back(Protons_[i].position_);
-            
-        }   
+            Protons_[i].position_ = position;
+            Protons_[i].TrackPostitions_.push_back(position);
+        }
 
         
         int x,y,z;
         std::complex<double> totalPhase;
         double omega;
         totalPhase = 0; 
-        std::cout << "Calculate Phase..." << std::endl;  
+        
 
         for(int i = 0; i < numberofprotons_; i++) { 
               // Startwert 1 + 0i
             for (int j = 0; j < NrOfSteps; j++) {
-                
-                x = static_cast<int>(Paths[i][0][j] + n_ / 2);
-                y = static_cast<int>(Paths[i][1][j] + n_ / 2);
-                z = static_cast<int>(Paths[i][2][j] + n_ / 2);
-                
-                omega = GAMMA * (Bz_[x][y][z] + B0_val_);
-                
+
+                omega = GAMMA * (interpolateBz(Paths[i][0][j] + n_/2.0,
+                Paths[i][1][j] + n_/2.0,
+                Paths[i][2][j] + n_/2.0) + B0_val_);
+
                 Protons_[i].phase_ *= std::exp(std::complex<double>(0,- omega *  dtM_));
                 
             }
+
             //Protons_[i].TrackPhases.push_back(Protons_[i].phase_);
-           
             totalPhase += Protons_[i].phase_;
 
-            
         }
-
-        std::vector<int> position = Protons_[20].position_;
         
-        std::cout << "Position:  " << position[0] << " " << position[1] << " " << position[2] << std::endl;
+        std::vector<double> position = Protons_[20].position_;
+        
+        //std::cout << "Position:  " << position[0] << " " << position[1] << " " << position[2] << std::endl;
         totalPhase = totalPhase / static_cast<double>(numberofprotons_);
      
         return totalPhase;
@@ -269,57 +287,24 @@ std::complex<double>  Voxel::ComputeSignalStatic(double t) {
 
 }
 
-std::vector<std::vector<int>> GetALL_positions(int xlen, int ylen, int zlen, int num_positions, const std::set<std::vector<int>>& Occupied_positions) {
-    std::set<std::vector<int>> final_positions;
-    std::vector<std::set<std::vector<int>>> thread_sets(omp_get_max_threads());
+std::vector<std::vector<double>> GetALL_positions(int xlen, int ylen, int zlen, int num_positions, const std::set<std::vector<int>>& Occupied_positions) {
+    std::set<std::vector<double>> final_positions;
 
-    #pragma omp parallel
-    {
-        int tid = omp_get_thread_num();
-        std::mt19937 gen(std::random_device{}() + tid);
-        std::uniform_real_distribution<double> dist_x(-xlen / 2 + 1, xlen / 2 - 1);
-        std::uniform_real_distribution<double> dist_y(-ylen / 2 + 1, ylen / 2 - 1);
-        std::uniform_real_distribution<double> dist_z(-zlen / 2 + 1, zlen / 2 - 1);
+    std::mt19937 gen(std::random_device{}());
+    std::uniform_real_distribution<double> dist_x(-xlen / 2.0 + 1, xlen / 2.0 - 1);
+    std::uniform_real_distribution<double> dist_y(-ylen / 2.0 + 1, ylen / 2.0 - 1);
+    std::uniform_real_distribution<double> dist_z(-zlen / 2.0 + 1, zlen / 2.0 - 1);
 
-        size_t target = num_positions / omp_get_num_threads();
-
-        while (thread_sets[tid].size() < target) {
-            std::vector<int> pos = {
-                static_cast<int>(std::round(dist_x(gen))),
-                static_cast<int>(std::round(dist_y(gen))),
-                static_cast<int>(std::round(dist_z(gen)))
-            };
-
-            if (!Occupied_positions.count(pos) && !thread_sets[tid].count(pos)) {
-                thread_sets[tid].insert(pos);
-            }
-        }
-    }
-
-    // Merge all thread-local sets
-    for (const auto& s : thread_sets) {
-        final_positions.insert(s.begin(), s.end());
-    }
-
-    // Fallback: Wenn zu wenige eindeutige Positionen erzeugt wurden
     while (final_positions.size() < static_cast<size_t>(num_positions)) {
-        std::mt19937 gen(std::random_device{}());
-        std::uniform_real_distribution<double> dist_x(-xlen / 2 + 1, xlen / 2 - 1);
-        std::uniform_real_distribution<double> dist_y(-ylen / 2 + 1, ylen / 2 - 1);
-        std::uniform_real_distribution<double> dist_z(-zlen / 2 + 1, zlen / 2 - 1);
+        std::vector<double> pos = {dist_x(gen), dist_y(gen), dist_z(gen)};
 
-        std::vector<int> pos = {
-            static_cast<int>(std::round(dist_x(gen))),
-            static_cast<int>(std::round(dist_y(gen))),
-            static_cast<int>(std::round(dist_z(gen)))
-        };
-
-        if (!Occupied_positions.count(pos)) {
+        // Prüfen, ob die gerundete Position schon belegt ist oder wir sie schon haben
+        if (!isElement(Occupied_positions, pos) && final_positions.count(pos) == 0) {
             final_positions.insert(pos);
         }
     }
 
-    return std::vector<std::vector<int>>(final_positions.begin(), final_positions.end());
+    return std::vector<std::vector<double>>(final_positions.begin(), final_positions.end());
 }
 
 std::set<std::vector<int>> GetOccupiedPositions(const std::vector<Artifact>& artifacts) {

@@ -28,12 +28,12 @@ public:
 
 class Proton {
 public:
-    std::vector<int> position_;
+    std::vector<double> position_;
     std::complex<double> phase_;
-    std::vector<std::vector<int>> TrackPostitions_;
+    std::vector<std::vector<double>> TrackPostitions_;
     std::vector<std::complex<double>> TrackPhases;
 
-    Proton(const std::vector<int>& position);
+    Proton(const std::vector<double>& position);
 };
 
 // =====================
@@ -60,7 +60,7 @@ public:
     std::vector<std::vector<std::vector<double>>> dz_;
     std::vector<std::vector<std::vector<double>>> ChiMap_;
     std::vector<std::vector<std::vector<double>>> Bz_;
-    std::vector<std::vector<int>> ALL_positions_;
+    std::vector<std::vector<double>> ALL_positions_;
     std::set<std::vector<int>> Occupied_positions_;
     
     std::vector<Proton> Protons_;
@@ -74,12 +74,13 @@ public:
 
     void SaveEveryEntry(std::vector<std::vector<std::vector<double>>> array);
     void CalculateDzMap();
+    double interpolateBz(double x, double y, double z);
     std::complex<double> SimulateDiffusionSteps(int NrOfSteps, double t);
     std::complex<double> ComputeSignalStatic(double t);
 };
 
 std::set<std::vector<int>> GetOccupiedPositions(const std::vector<Artifact>& artifacts);
 
-std::vector<std::vector<int>> GetALL_positions(int xlen, int ylen, int zlen, int num_positions, const std::set<std::vector<int>>& Occupied_positions);
+std::vector<std::vector<double>> GetALL_positions(int xlen, int ylen, int zlen, int num_positions, const std::set<std::vector<int>>& Occupied_positions);
 
 #endif
