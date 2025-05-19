@@ -35,13 +35,12 @@ Artifact::Artifact(std::vector<int> positionmain, int pm, int size, double susce
                 }
             }
             totsuscept_ = pm * suscept_ * positions_.size();
-        };
+        }
 
 Voxel::Voxel(int n, double L, int SIZE_arti, double DeltaChi, int N, int numberofprotons, std::vector<double> B0, double D, double dt): 
         n_(n), L_(L), SIZE_arti_(SIZE_arti), DeltaChi_(DeltaChi), N_(N),numberofprotons_(numberofprotons), B0_(B0), D_(D), dt_(dt) {
             
-        std::cout << "\nStart Monte Carlo SIMULATOR\n\n Initialize Voxel for Simulation..."  << std::endl;
-
+        std::cout << "\nStart Monte Carlo SIMULATOR\n\nInitialize Voxel for Simulation..."  << std::endl;
             
         dz_ = std::vector<std::vector<std::vector<double>>>(n, 
             std::vector<std::vector<double>>(n, 
@@ -104,8 +103,9 @@ Voxel::Voxel(int n, double L, int SIZE_arti, double DeltaChi, int N, int numbero
                 }
             }
         
-        B0_val_ = 3.0;
-        Bz_ = applyIFFT3D(multip_,n_, B0_val_);
+        
+
+        Bz_ = applyIFFT3D(multip_,n_, B0_[2]);
         
         std::cout << "Initialize Protons..." << std::endl;
 
@@ -164,15 +164,15 @@ std::complex<double> Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {
         for (size_t i = 0; i < numberofprotons_; i++) {
             std::vector<int> position = Protons_[i].position_;
             std::vector<int> candidatePos(3);
-            
+            //(std::cout << "Proton: " << i << std::endl;
             
             for (int step = 0; step < NrOfSteps; ++step) {
                 bool collision;
                 
                 do {
-                    double dx = dis(gen) * n_;
-                    double dy = dis(gen) * n_;
-                    double dz = dis(gen) * n_;
+                    double dx = dis(gen) * n_ / L_;
+                    double dy = dis(gen) * n_ / L_;
+                    double dz = dis(gen) * n_ / L_;
         
                     int newX = position[0] + std::round(dx);
                     int newY = position[1] + std::round(dy);
@@ -188,7 +188,7 @@ std::complex<double> Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {
                     candidatePos[2] = newZ;
                    
                     // Prüfen, ob Position besetzt
-                    collision = false; //isElement(Occupied_positions_, candidatePos);
+                    collision = isElement(Occupied_positions_, candidatePos);
         
                     // Wenn collision == true, wird while nochmal ausgeführt und neuer Schritt probiert
                 } while (collision);
@@ -269,61 +269,69 @@ std::complex<double>  Voxel::ComputeSignalStatic(double t) {
 
 }
 
-std::vector<std::vector<int>> GetALL_positions(int xlen, int ylen, int zlen, int num_positions, std::vector<std::vector<int>> Occupied_positions) {
-    std::vector<std::vector<int>> positionsALL;
-    positionsALL.reserve(num_positions);  // Reserve space for the positions
-
-    std::random_device rd;
-    std::mt19937 gen(rd());
-    std::uniform_real_distribution<double> dist_x(-xlen /2 + 1, xlen / 2 - 1);
-    std::uniform_real_distribution<double> dist_y(- ylen/ 2 + 1, ylen / 2 - 1);
-    std::uniform_real_distribution<double> dist_z(-zlen / 2 + 1, zlen / 2- 1);
+std::vector<std::vector<int>> GetALL_positions(int xlen, int ylen, int zlen, int num_positions, const std::set<std::vector<int>>& Occupied_positions) {
+    std::set<std::vector<int>> final_positions;
+    std::vector<std::set<std::vector<int>>> thread_sets(omp_get_max_threads());
 
     #pragma omp parallel
     {
-        std::mt19937 thread_gen(rd() + omp_get_thread_num());
-        std::uniform_real_distribution<double> thread_dist_x(-xlen /2 + 1, xlen /2 - 1);
-        std::uniform_real_distribution<double> thread_dist_y(-ylen / 2 + 1, ylen / 2 - 1);
-        std::uniform_real_distribution<double> thread_dist_z(-zlen / 2 + 1, zlen / 2 - 1);
+        int tid = omp_get_thread_num();
+        std::mt19937 gen(std::random_device{}() + tid);
+        std::uniform_real_distribution<double> dist_x(-xlen / 2 + 1, xlen / 2 - 1);
+        std::uniform_real_distribution<double> dist_y(-ylen / 2 + 1, ylen / 2 - 1);
+        std::uniform_real_distribution<double> dist_z(-zlen / 2 + 1, zlen / 2 - 1);
 
-        #pragma omp for
-        for (int i = 0; i < num_positions; i++) {
-            std::vector<int> new_position;
-            bool is_unique = false;
+        size_t target = num_positions / omp_get_num_threads();
 
-            while (!is_unique) {
-                // Generate a new random position
-                new_position = {
-                    static_cast<int>(std::round(thread_dist_x(thread_gen))),
-                    static_cast<int>(std::round(thread_dist_y(thread_gen))),
-                    static_cast<int>(std::round(thread_dist_z(thread_gen)))
-                };
+        while (thread_sets[tid].size() < target) {
+            std::vector<int> pos = {
+                static_cast<int>(std::round(dist_x(gen))),
+                static_cast<int>(std::round(dist_y(gen))),
+                static_cast<int>(std::round(dist_z(gen)))
+            };
 
-
-                // Check if the position is already occupied
-                is_unique = !isElement(Occupied_positions, new_position);
-                
+            if (!Occupied_positions.count(pos) && !thread_sets[tid].count(pos)) {
+                thread_sets[tid].insert(pos);
             }
-
-            #pragma omp critical
-            {   
-                positionsALL.push_back(new_position);  // Add the unique position to the results
-            }
-        } 
+        }
     }
 
-    return positionsALL;
+    // Merge all thread-local sets
+    for (const auto& s : thread_sets) {
+        final_positions.insert(s.begin(), s.end());
+    }
+
+    // Fallback: Wenn zu wenige eindeutige Positionen erzeugt wurden
+    while (final_positions.size() < static_cast<size_t>(num_positions)) {
+        std::mt19937 gen(std::random_device{}());
+        std::uniform_real_distribution<double> dist_x(-xlen / 2 + 1, xlen / 2 - 1);
+        std::uniform_real_distribution<double> dist_y(-ylen / 2 + 1, ylen / 2 - 1);
+        std::uniform_real_distribution<double> dist_z(-zlen / 2 + 1, zlen / 2 - 1);
+
+        std::vector<int> pos = {
+            static_cast<int>(std::round(dist_x(gen))),
+            static_cast<int>(std::round(dist_y(gen))),
+            static_cast<int>(std::round(dist_z(gen)))
+        };
+
+        if (!Occupied_positions.count(pos)) {
+            final_positions.insert(pos);
+        }
+    }
+
+    return std::vector<std::vector<int>>(final_positions.begin(), final_positions.end());
 }
 
-std::vector<std::vector<int>> GetOccupiedPositions(std::vector<Artifact>& artifacts) {
-    std::vector<std::vector<int>> all_positions;
+std::set<std::vector<int>> GetOccupiedPositions(const std::vector<Artifact>& artifacts) {
+    std::set<std::vector<int>> all_positions;
 
     // Iterate through all artifacts and collect positions
     for (const auto& artifact : artifacts) {
         for (const auto& pos : artifact.positions_) {
-            all_positions.push_back(pos);
+            all_positions.insert(pos);  // statt push_back
         }
     }
 
     return all_positions;
-};
+}
+

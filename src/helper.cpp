@@ -1,9 +1,32 @@
 #include <iostream>
 #include <string>
 #include <fstream>
-
 #include "helper.hpp"
 
+
+
+SimulationConfig loadConfig(const std::string& filename) {
+    std::ifstream file(filename);
+    if (!file.is_open()) {
+        throw std::runtime_error("Failed to open config file: " + filename);
+    }
+
+    json config_json;
+    file >> config_json;
+
+    SimulationConfig config;
+    config.n = config_json.value("n", 500);
+    config.numberofprotons = config_json.value("numberofprotons", 100000);
+    config.L = config_json.value("L", 1.0);
+    config.SIZE_arti = config_json.value("SIZE_arti", 10);
+    config.DeltaChi = config_json.value("DeltaChi", 5e-15);
+    config.N = config_json.value("N", 2000);
+    config.dt = config_json.value("dt", 0.0001);
+    config.D = config_json.value("D", 5e-3);
+    config.B0vec = config_json.value("B0", std::vector<double>{0.0, 0.0, 3.0});
+    config.B0 = sqrt(config.B0vec[0] * config.B0vec[0] + config.B0vec[1] * config.B0vec[1] + config.B0vec[2] * config.B0vec[2]);
+    return config;
+}
 
 std::vector<std::vector<std::vector<double>>> applyIFFT3D(const std::vector<std::vector<std::vector<std::complex<double>>>>& kSpace, int n, double B0_val) {
     std::vector<std::vector<std::vector<double>>> rSpace(n, std::vector<std::vector<double>>(n, std::vector<double>(n)));
@@ -112,14 +135,8 @@ void shift3DArray(std::vector<std::vector<std::vector<double>>>& array, int n) {
     array = shiftedArray;
 }
 
-bool isElement(std::vector<std::vector<int>>& outer, std::vector<int>& inner) {
-    for (const auto& elem : outer) {
-        // Compare each vector
-        if (elem == inner) {
-            return true;
-        }
-    }
-    return false;
+bool isElement(const std::set<std::vector<int>>& s, const std::vector<int>& v) {
+    return s.find(v) != s.end();
 }
 
 void SaveSignalDecay(const std::vector<double>& times, const std::vector<double>& magnitudes, const std::vector<double>& signal, const std::vector<double>& star, std::string filename)
@@ -195,4 +212,4 @@ void SaveChiMap(const Voxel& voxel, const std::string& filename){
     }
     std::cout << "Chi map saved\n";
 }
-    
+
