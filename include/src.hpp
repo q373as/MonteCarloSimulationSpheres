@@ -44,13 +44,15 @@ class Voxel {
 public:
     int n_;
     double L_;
-    int N_;
-    int SIZE_arti_;
-    double DeltaChi_;
+    int N_ = 0;
+    double SIZE_arti_;
+    double Xtot_;
     int numberofprotons_;
     double B0_val_;
     double dt_;
     double D_;
+    double eta_;
+    double DeltaChi_ = eta_ * Xtot_;
 
     double nb_ = static_cast<double>(n_);
    
@@ -62,7 +64,7 @@ public:
     std::vector<std::vector<std::vector<double>>> Bz_;
     std::vector<std::vector<double>> ALL_positions_;
     std::set<std::vector<int>> Occupied_positions_;
-    
+    std::vector<Artifact> artifacts;
     std::vector<Proton> Protons_;
     std::vector<Proton> Protons_init_;
 
@@ -70,7 +72,7 @@ public:
     fftw_complex* ChiMap_fftw_;
     fftw_complex* Bz_fftw_;
 
-    Voxel(int n, double L, int SIZE_arti, double DeltaChi, int N, int numberofprotons, std::vector<double> B0, double D, double dt);
+    Voxel(int n, double L, double SIZE_arti, double Xtot, double eta, int numberofprotons, std::vector<double> B0, double D, double dt);
 
     void SaveEveryEntry(std::vector<std::vector<std::vector<double>>> array);
     void CalculateDzMap();

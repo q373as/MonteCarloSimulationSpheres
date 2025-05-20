@@ -18,13 +18,16 @@ SimulationConfig loadConfig(const std::string& filename) {
     config.n = config_json.value("n", 500);
     config.numberofprotons = config_json.value("numberofprotons", 100000);
     config.L = config_json.value("L", 1.0);
-    config.SIZE_arti = config_json.value("SIZE_arti", 10);
-    config.DeltaChi = config_json.value("DeltaChi", 5e-15);
-    config.N = config_json.value("N", 2000);
+    config.SIZE_arti = config_json.value("SIZE_arti", 10.0);
+    config.eta = config_json.value("eta", 0.01);
+    config.Xtot = config_json.value("Xtot", 1e-7);
     config.dt = config_json.value("dt", 0.0001);
     config.D = config_json.value("D", 5e-3);
     config.B0vec = config_json.value("B0", std::vector<double>{0.0, 0.0, 3.0});
     config.B0 = sqrt(config.B0vec[0] * config.B0vec[0] + config.B0vec[1] * config.B0vec[1] + config.B0vec[2] * config.B0vec[2]);
+    config.index = config_json.value("index", 0);
+    config.DiffSteps = config_json.value("DiffSteps", 10.0);
+    config.tsteps = config_json.value("tsteps", 1000);
     return config;
 }
 
@@ -144,24 +147,21 @@ bool isElement(const std::set<std::vector<int>>& s, const std::vector<double>& v
     return s.find(v_rounded) != s.end();
 }
 
-void SaveSignalDecay(const std::vector<double>& times, const std::vector<double>& magnitudes, const std::vector<double>& signal, const std::vector<double>& star, std::string filename)
-        {
-
-
+void SaveSignalDecay(const std::vector<double>& times, const std::vector<double>& magnitudes, const std::vector<double>& signal, const std::vector<double>& star, const std::vector<double>& Hyper, std::string filename){
         std::ofstream outFile(filename);
-
 
         if (!outFile.is_open()) {
         std::cerr << "Error opening signal_decay file for writing!\n";
         return;
         }
 
-        outFile << "Time\tStaticDephasing\tDiffusion\tAnalytic\n";
+        outFile << "Time\tStaticDephasing\tDiffusion\tAnalytic\tHyper\n";
         for (size_t i = 0; i < times.size(); ++i) {
                 outFile << times[i] << "\t" 
                 << magnitudes[i] << "\t" 
                 << signal[i] << "\t" 
-                << star[i] << "\n";
+                << star[i] << "\t"
+                << Hyper[i] << "\n";
                 }
         std::cout << "Signal decay saved\n";
     }
@@ -218,3 +218,51 @@ void SaveChiMap(const Voxel& voxel, const std::string& filename){
     std::cout << "Chi map saved\n";
 }
 
+double pochhammer(double x, int n) {
+    double result = 1.0;
+    for (int i = 0; i < n; ++i)
+        result *= (x + i);
+    return result;
+}
+
+double hypergeom_1F2(double a, double b1, double b2, double z, int max_terms, double tol) {
+    double sum = 1.0;
+    double term = 1.0;
+    for (int n = 1; n < max_terms; ++n) {
+        term *= (a + n - 1) * z / ((b1 + n - 1) * (b2 + n - 1) * n);
+        sum += term;
+        //std::cout << "Term " << n << ": " << term << std::endl;
+        if (std::abs(term) < tol) break;
+    }
+    return sum;
+}
+
+double f(double delta_omega, double t) {
+    double x = delta_omega * t;
+    double z = -9.0 / 16.0 * x * x;
+    return hypergeom_1F2(-0.5, 0.75, 1.25, z) - 1.0;
+}
+
+void saveConfigToJson(const SimulationConfig& cfg, const std::string& filename) {
+    json j;
+    j["n"] = cfg.n;
+    j["numberofprotons"] = cfg.numberofprotons;
+    j["L"] = cfg.L;
+    j["SIZE_arti"] = cfg.SIZE_arti;
+    j["DeltaChi"] = cfg.DeltaChi;
+    j["N"] = cfg.N;
+    j["dt"] = cfg.dt;
+    j["D"] = cfg.D;
+    j["B0vec"] = cfg.B0vec;
+    j["B0"] = cfg.B0;
+    j["index"] = cfg.index;
+    j["DiffSteps"] = cfg.DiffSteps;
+    j["tsteps"] = cfg.tsteps;
+    j["eta"] = cfg.eta;
+    j["Xtot"] = cfg.Xtot;
+    j["tc"] = cfg.tc;
+    j["R2p"] = cfg.R2p;
+
+    std::ofstream file(filename);
+    file << j.dump(2);  // pretty print with indent=2
+}

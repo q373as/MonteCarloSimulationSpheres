@@ -37,8 +37,8 @@ Artifact::Artifact(std::vector<int> positionmain, int pm, int size, double susce
             totsuscept_ = pm * suscept_ * positions_.size();
         }
 
-Voxel::Voxel(int n, double L, int SIZE_arti, double DeltaChi, int N, int numberofprotons, std::vector<double> B0, double D, double dt): 
-        n_(n), L_(L), SIZE_arti_(SIZE_arti), DeltaChi_(DeltaChi), N_(N),numberofprotons_(numberofprotons), B0_(B0), D_(D), dt_(dt) {
+Voxel::Voxel(int n, double L, double SIZE_arti, double Xtot, double eta, int numberofprotons, std::vector<double> B0, double D, double dt): 
+        n_(n), L_(L), SIZE_arti_(SIZE_arti), Xtot_(Xtot), eta_(eta), numberofprotons_(numberofprotons), B0_(B0), D_(D), dt_(dt) {
             
         std::cout << "\nStart Monte Carlo SIMULATOR\n\nInitialize Voxel for Simulation..."  << std::endl;
             
@@ -61,15 +61,29 @@ Voxel::Voxel(int n, double L, int SIZE_arti, double DeltaChi, int N, int numbero
         std::cout << "Set Random Seed Generator..." << std::endl;
         std::random_device rd;  // Seed generator
         std::mt19937 gen(rd());
-        std::vector<Artifact> artifacts;
+        
         std::uniform_int_distribution<int> dist(0, n_);
-        std::vector<int> pos;
+        std::exponential_distribution<> size_dist(1.0  / (SIZE_arti_)); 
 
-
+    
         std::cout << "Create Susceptibility Artifacts..." << std::endl;
-        for (int i = 0; i < N; i++) {
+
+        std::vector<int> pos;
+        double Volf = 0.0;
+        double Radius,positionsoc;
+
+        while (Volf < eta_) {
+            
+            double Radius = size_dist(gen) * 1e-6 * n_ / L_;
+            int radius_discrete = std::round(Radius);
+    
             pos = {dist(gen), dist(gen), dist(gen)};
-            artifacts.push_back(Artifact(pos, 1, SIZE_arti_, DeltaChi_, n_));
+            Artifact artifact(pos, 1, radius_discrete, DeltaChi_, n_);
+
+            Volf += artifact.positions_.size() / Vm_;
+            
+            artifacts.push_back(artifact);
+            N_ += 1;
         }
 
         Occupied_positions_ = GetOccupiedPositions(artifacts);
@@ -102,8 +116,6 @@ Voxel::Voxel(int n, double L, int SIZE_arti, double DeltaChi, int N, int numbero
                     }
                 }
             }
-        
-        
 
         Bz_ = applyIFFT3D(multip_,n_, B0_[2]);
         
@@ -124,6 +136,7 @@ Voxel::Voxel(int n, double L, int SIZE_arti, double DeltaChi, int N, int numbero
             
 
 }
+
 
 void Voxel::CalculateDzMap() {
     #pragma omp parallel for collapse(3)
@@ -171,32 +184,28 @@ double Voxel::interpolateBz(double x, double y, double z) {
 }
 
 std::complex<double> Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {
-
-        std::random_device rd;
-        std::mt19937 gen(rd());
-
+        
         double dtM_ = dt_ / static_cast<double>(NrOfSteps);
-
-        std::normal_distribution<> dis(0,std::sqrt(2 * D_ * dtM_));
-
-      
         std::vector<std::vector<std::vector<double>>> Paths(numberofprotons_, 
                                                             std::vector<std::vector<double>>(3, std::vector<double>(NrOfSteps, 0.0)));
-
 
         #pragma omp parallel for
         for (size_t i = 0; i < numberofprotons_; i++) {
             std::vector<double> position = Protons_[i].position_;
             std::vector<double> candidatePos(3);
-            
+            std::random_device rd;
+            std::mt19937 gen(rd() + omp_get_thread_num()); // eigenständiger RNG pro Thread
+            std::normal_distribution<> dis(0,std::sqrt(2 * D_ * dtM_) * n_ / L_);
+
             for (int step = 0; step < NrOfSteps; ++step) {
                 bool collision;
                 
                 do {
-                    double dx = dis(gen) * n_ / L_;
-                    double dy = dis(gen) * n_ / L_;
-                    double dz = dis(gen) * n_ / L_;
-        
+                    double dx = dis(gen);
+                    double dy = dis(gen);
+                    double dz = dis(gen);
+                    
+                    
                     candidatePos[0] = position[0] + dx;
                     candidatePos[1] = position[1] + dy;
                     candidatePos[2] = position[2] + dz;
@@ -208,12 +217,10 @@ std::complex<double> Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {
                         if (res < 0) res += n_;
                         return res - halfN;
                     };
-        
+
                     candidatePos[0] = wrap(candidatePos[0]);
                     candidatePos[1] = wrap(candidatePos[1]);
                     candidatePos[2] = wrap(candidatePos[2]);
-        
-                   
         
                     collision = isElement(Occupied_positions_, candidatePos);
         
