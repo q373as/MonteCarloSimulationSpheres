@@ -34,6 +34,7 @@ Artifact::Artifact(std::vector<int> positionmain, int pm, int size, double susce
                     }
                 }
             }
+
             totsuscept_ = pm * suscept_ * positions_.size();
         }
 
@@ -54,6 +55,7 @@ Voxel::Voxel(int n, double L, double SIZE_arti, double Xtot, double eta, int num
             std::vector<std::vector<double>>(n, 
             std::vector<double>(n, 0.0)));
 
+        
         std::cout << "Calculate Dz-Map..." << std::endl;
 
         CalculateDzMap();
@@ -67,34 +69,36 @@ Voxel::Voxel(int n, double L, double SIZE_arti, double Xtot, double eta, int num
 
     
         std::cout << "Create Susceptibility Artifacts..." << std::endl;
-
+        
         std::vector<int> pos;
-        double Volf = 0.0;
-        double Radius,positionsoc;
-
+        double Radius, Volf = 0.0;
+        
         while (Volf < eta_) {
-            
+
             double Radius = size_dist(gen) * 1e-6 * n_ / L_;
             int radius_discrete = std::round(Radius);
     
             pos = {dist(gen), dist(gen), dist(gen)};
             Artifact artifact(pos, 1, radius_discrete, DeltaChi_, n_);
 
-            Volf += artifact.positions_.size() / Vm_;
+            Volf += static_cast<double>(artifact.positions_.size()) * Vm_;
             
             artifacts.push_back(artifact);
             N_ += 1;
+
         }
+        
 
         Occupied_positions_ = GetOccupiedPositions(artifacts);
 
-        // Set the susceptibility map
+        double sus = Xtot_ / Occupied_positions_.size() ;
         for (auto& artifact : artifacts) {
+            
             for (auto& pos : artifact.positions_) {
                 int x = pos[0] + n_/2;
                 int y = pos[1] + n_/2;
                 int z = pos[2] + n_/2;
-                ChiMap_[x][y][z] += artifact.suscept_;
+                ChiMap_[x][y][z] += sus;
             }
         }
 
@@ -102,9 +106,6 @@ Voxel::Voxel(int n, double L, double SIZE_arti, double Xtot, double eta, int num
 
         auto Chimapk_ = applyFFT3D(ChiMap_, n_);
         auto Dk_ = applyFFT3D(dz_, n_);
-
-        //print3DVector(convertComplexToDouble(Dk_));
-        //print3DVector(convertComplexToDouble(Dk_));
 
         auto multip_ = Dk_;
 
@@ -130,13 +131,12 @@ Voxel::Voxel(int n, double L, double SIZE_arti, double Xtot, double eta, int num
         Protons_init_ = Protons_;
 
         shift3DArray(Bz_, n_);
-       
+      
         std::cout << "\nVoxel Initialization Done...\n" << std::endl;
 
             
 
 }
-
 
 void Voxel::CalculateDzMap() {
     #pragma omp parallel for collapse(3)
@@ -245,7 +245,6 @@ std::complex<double> Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {
         double omega;
         totalPhase = 0; 
         
-
         for(int i = 0; i < numberofprotons_; i++) { 
               // Startwert 1 + 0i
             for (int j = 0; j < NrOfSteps; j++) {
@@ -263,9 +262,6 @@ std::complex<double> Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {
 
         }
         
-        std::vector<double> position = Protons_[20].position_;
-        
-        //std::cout << "Position:  " << position[0] << " " << position[1] << " " << position[2] << std::endl;
         totalPhase = totalPhase / static_cast<double>(numberofprotons_);
      
         return totalPhase;
@@ -279,9 +275,10 @@ std::complex<double>  Voxel::ComputeSignalStatic(double t) {
         totalPhase = 0; 
      
         for(int i = 0; i < numberofprotons_; i++) { 
-            x = static_cast<int>(ALL_positions_[i][0] + n_ / 2);
-            y = static_cast<int>(ALL_positions_[i][1] + n_ / 2);
-            z = static_cast<int>(ALL_positions_[i][2] + n_ / 2);
+            x = static_cast<int>(std::round(ALL_positions_[i][0] + n_/2.0));
+            y = static_cast<int>(std::round(ALL_positions_[i][1] + n_/2.0));
+            z = static_cast<int>(std::round(ALL_positions_[i][2] + n_/2.0));
+
 
             omega = GAMMA * (Bz_[x][y][z] + B0_val_); 
          
@@ -290,7 +287,7 @@ std::complex<double>  Voxel::ComputeSignalStatic(double t) {
 
         }
         
-        return totalPhase / static_cast<double>(numberofprotons_);;
+        return totalPhase / static_cast<double>(numberofprotons_);
 
 }
 

@@ -1,19 +1,18 @@
 {
   "n": 480,
   "numberofprotons": 100000,
-  "L": 0.000631,
-  "SIZE_arti": 1.5,
-  "Xtot": 2e-07,
+  "L": 0.001,
+  "SIZE_arti": 4.2,
+  "Xtot": 1e-07,
   "eta": 0.2,
   "dt": 0.0005,
   "DiffSteps": 10,
-  "tsteps": 120,
+  "tsteps": 100,
   "D": 1e-09,
   "B0": [
     0.0,
     0.0,
     3.0
   ],
-  "index": 5,
-  "DeltaChi": 1e-14
+  "index": 14
 }

@@ -33,12 +33,13 @@ int main() {
 
     double inter,stat,result;
     cfg.tc = 3 / (4 * M_PI * GAMMA * cfg.B0 * cfg.Xtot);
-        
+    
+    cfg.N =voxel.N_;
     for(int t = 0; t < cfg.tsteps; t++){
         inter = std::abs(voxel.SimulateDiffusionSteps(cfg.DiffSteps, t * cfg.dt));
         stat = std::abs(voxel.ComputeSignalStatic(t * cfg.dt));
 
-        result =  std::exp(- cfg.eta * f(1/cfg.tc, t * cfg.dt));
+        result =   std::exp(-cfg.eta * f(1/cfg.tc, t * cfg.dt));
         std::cout << "Timestep: " << t*cfg.dt << "  Diffusion: " << inter << " Static Dephasing: " << stat << "  Hyper: " << result << "  Analytic: " << std::exp(- cfg.R2p * t * cfg.dt) <<  std::endl;
 
         signal.push_back(inter);

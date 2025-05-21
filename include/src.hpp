@@ -48,12 +48,12 @@ public:
     double SIZE_arti_;
     double Xtot_;
     int numberofprotons_;
-    double B0_val_;
+    
     double dt_;
     double D_;
     double eta_;
     double DeltaChi_ = eta_ * Xtot_;
-
+    
     double nb_ = static_cast<double>(n_);
    
     double Vm_ = 1 / (nb_ * nb_ * nb_);
@@ -72,6 +72,8 @@ public:
     fftw_complex* ChiMap_fftw_;
     fftw_complex* Bz_fftw_;
 
+    double B0_val_ = sqrt(B0_[0]*B0_[0] + B0_[1]*B0_[1] + B0_[2]*B0_[2]);
+    
     Voxel(int n, double L, double SIZE_arti, double Xtot, double eta, int numberofprotons, std::vector<double> B0, double D, double dt);
 
     void SaveEveryEntry(std::vector<std::vector<std::vector<double>>> array);
