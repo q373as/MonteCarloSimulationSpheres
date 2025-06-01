@@ -18,7 +18,8 @@ SimulationConfig loadConfig(const std::string& filename) {
     config.n = config_json.value("n", 500);
     config.numberofprotons = config_json.value("numberofprotons", 100000);
     config.L = config_json.value("L", 1.0);
-    config.SIZE_arti = config_json.value("SIZE_arti", 10.0);
+    config.mu = config_json.value("mu", 10.0);
+    config.sigma = config_json.value("sigma", 10.0);
     config.eta = config_json.value("eta", 0.01);
     config.Xtot = config_json.value("Xtot", 1e-7);
     config.dt = config_json.value("dt", 0.0001);
@@ -28,18 +29,19 @@ SimulationConfig loadConfig(const std::string& filename) {
     config.index = config_json.value("index", 0);
     config.DiffSteps = config_json.value("DiffSteps", 10.0);
     config.tsteps = config_json.value("tsteps", 1000);
+    config.R2 = config_json.value("R2", 10);
     return config;
 }
 
 std::vector<std::vector<std::vector<double>>> applyIFFT3D(const std::vector<std::vector<std::vector<std::complex<double>>>>& kSpace, int n, double B0_val) {
     std::vector<std::vector<std::vector<double>>> rSpace(n, std::vector<std::vector<double>>(n, std::vector<double>(n)));
 
-    // Erstelle den FFTW-Plan für die inverse 3D-Transformation
+ 
     fftw_complex* in = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * n * n * n);
     fftw_complex* out = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * n * n * n);
 
 
-    // Übertrage die Daten aus kSpace in das fftw_complex Array
+
     for (int i = 0; i < n; ++i)
         for (int j = 0; j < n; ++j)
             for (int k = 0; k < n; ++k) {
@@ -48,70 +50,62 @@ std::vector<std::vector<std::vector<double>>> applyIFFT3D(const std::vector<std:
             }
 
      
-
-    // Erstelle den FFTW-Plan für die inverse Transformation
     fftw_plan plan = fftw_plan_dft_3d(n, n, n, in, out, FFTW_BACKWARD, FFTW_ESTIMATE);
 
-    // Wende den FFT-Plan an
     fftw_execute(plan);
 
-    // Übertrage die transformierten Daten in das ChiMap_-Array
     for (int i = 0; i < n; ++i)
         for (int j = 0; j < n; ++j)
             for (int k = 0; k < n; ++k) {
                 double shift = (out[i * n * n + j * n + k][0]);
-                rSpace[i][j][k] = B0_val * shift / (n * n * n);  // Normalisierung
+                rSpace[i][j][k] = B0_val * shift / (n * n * n);  
             }
 
-    // Plan und Speicher freigeben
+  
     fftw_destroy_plan(plan);
     fftw_free(in);
     fftw_free(out);
 
-    return rSpace;  // Rückgabe der zurücktransformierten ChiMap_
+    return rSpace; 
 }
 
 std::vector<std::vector<std::vector<std::complex<double>>>> applyFFT3D(const std::vector<std::vector<std::vector<double>>>& rSpace, int n) {
     std::vector<std::vector<std::vector<std::complex<double>>>> kSpace(n, std::vector<std::vector<std::complex<double>>>(n, std::vector<std::complex<double>>(n)));
 
-    // Erstelle den FFTW-Plan für 3D-Daten
+    
     fftw_complex* in = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * n * n * n);
     fftw_complex* out = (fftw_complex*) fftw_malloc(sizeof(fftw_complex) * n * n * n);
 
     for (int i = 0; i < n * n * n; ++i) {
-        in[i][0] = 0.0;  // Real part
-        in[i][1] = 0.0;  // Imaginary part
+        in[i][0] = 0.0;  
+        in[i][1] = 0.0;  
     }
 
-    // Übertrage die Daten aus ChiMap_ in das fftw_complex Array
     for (int i = 0; i < n; ++i)
         for (int j = 0; j < n; ++j)
             for (int k = 0; k < n; ++k) {
-                in[i * n * n + j * n + k][0] = rSpace[i][j][k];  // Realteil
-                in[i * n * n + j * n + k][1] = 0.0;  // Imaginärteil
+                in[i * n * n + j * n + k][0] = rSpace[i][j][k]; 
+                in[i * n * n + j * n + k][1] = 0.0;  
 
             }
 
     
-    // Erstelle den FFTW-Plan
+ 
     fftw_plan plan = fftw_plan_dft_3d(n, n, n, in, out, FFTW_FORWARD, FFTW_MEASURE);
 
-    // Wende den FFT-Plan an
     fftw_execute(plan);
 
-    // Übertrage die transformierten Daten in das kSpace-Array
     for (int i = 0; i < n; ++i)
         for (int j = 0; j < n; ++j)
             for (int k = 0; k < n; ++k) {
                 kSpace[i][j][k] = std::complex<double>(out[i * n * n + j * n + k][0], out[i * n * n + j * n + k][1]);
             }
 
-    // Plan und Speicher freigeben
     fftw_destroy_plan(plan);
     fftw_free(in);
     fftw_free(out);
 
-    return kSpace;  // Rückgabe des k-space
+    return kSpace;
 }
 
 void shift3DArray(std::vector<std::vector<std::vector<double>>>& array, int n) {
@@ -248,7 +242,8 @@ void saveConfigToJson(const SimulationConfig& cfg, const std::string& filename) 
     j["n"] = cfg.n;
     j["numberofprotons"] = cfg.numberofprotons;
     j["L"] = cfg.L;
-    j["SIZE_arti"] = cfg.SIZE_arti;
+    j["mu"] = cfg.mu;
+    j["sigma"] = cfg.sigma;
     j["DeltaChi"] = cfg.DeltaChi;
     j["N"] = cfg.N;
     j["dt"] = cfg.dt;

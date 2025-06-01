@@ -17,7 +17,8 @@ struct SimulationConfig {
     int n;
     int numberofprotons;
     double L;
-    double SIZE_arti;
+    double mu;
+    double sigma;
     double DeltaChi;
     int N;
     double dt;
@@ -31,6 +32,7 @@ struct SimulationConfig {
     double Xtot; 
     double tc;
     double R2p;
+    double R2;
 
 };
 
@@ -52,7 +54,6 @@ void SaveDiffusionPaths(const Voxel& voxel, const std::string& filename);
 
 void SaveChiMap(const Voxel& voxel, const std::string& filename);
 
-// Pochhammer symbol (rising factorial)
 double pochhammer(double x, int n);
 
 double hypergeom_1F2(double a, double b1, double b2, double z, int max_terms = 100, double tol = 1e-50);
@@ -60,5 +61,7 @@ double hypergeom_1F2(double a, double b1, double b2, double z, int max_terms = 1
 double f(double delta_omega, double t);
 
 void saveConfigToJson(const SimulationConfig& cfg, const std::string& filename);
+
+double Jensen(double t, double tc, double alpha);
 
 #endif

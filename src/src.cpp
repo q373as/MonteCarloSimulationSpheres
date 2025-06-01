@@ -38,8 +38,8 @@ Artifact::Artifact(std::vector<int> positionmain, int pm, int size, double susce
             totsuscept_ = pm * suscept_ * positions_.size();
         }
 
-Voxel::Voxel(int n, double L, double SIZE_arti, double Xtot, double eta, int numberofprotons, std::vector<double> B0, double D, double dt): 
-        n_(n), L_(L), SIZE_arti_(SIZE_arti), Xtot_(Xtot), eta_(eta), numberofprotons_(numberofprotons), B0_(B0), D_(D), dt_(dt) {
+Voxel::Voxel(int n, double L, double Xtot, double eta, int numberofprotons, std::vector<double> B0, double D, double dt, double mu, double sigma): 
+        n_(n), L_(L), Xtot_(Xtot), eta_(eta), numberofprotons_(numberofprotons), B0_(B0), D_(D), dt_(dt),mu_(mu), sigma_(sigma)  {
             
         std::cout << "\nStart Monte Carlo SIMULATOR\n\nInitialize Voxel for Simulation..."  << std::endl;
             
@@ -65,7 +65,7 @@ Voxel::Voxel(int n, double L, double SIZE_arti, double Xtot, double eta, int num
         std::mt19937 gen(rd());
         
         std::uniform_int_distribution<int> dist(0, n_);
-        std::exponential_distribution<> size_dist(1.0  / (SIZE_arti_)); 
+        std::lognormal_distribution<double> lognorm_dist(mu_, sigma_);
 
     
         std::cout << "Create Susceptibility Artifacts..." << std::endl;
@@ -75,7 +75,7 @@ Voxel::Voxel(int n, double L, double SIZE_arti, double Xtot, double eta, int num
         
         while (Volf < eta_) {
 
-            double Radius = size_dist(gen) * 1e-6 * n_ / L_;
+            double Radius = lognorm_dist(gen) * 1e-6 * n_ / L_;
             int radius_discrete = std::round(Radius);
     
             pos = {dist(gen), dist(gen), dist(gen)};
@@ -183,9 +183,9 @@ double Voxel::interpolateBz(double x, double y, double z) {
     return c0 * (1 - zd) + c1 * zd;
 }
 
-std::complex<double> Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {
-        
-        double dtM_ = dt_ / static_cast<double>(NrOfSteps);
+std::complex<double> Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {    
+        double steps = static_cast<double>(NrOfSteps);
+        double dtM_ = dt_ / steps;
         std::vector<std::vector<std::vector<double>>> Paths(numberofprotons_, 
                                                             std::vector<std::vector<double>>(3, std::vector<double>(NrOfSteps, 0.0)));
 
@@ -279,8 +279,7 @@ std::complex<double>  Voxel::ComputeSignalStatic(double t) {
             y = static_cast<int>(std::round(ALL_positions_[i][1] + n_/2.0));
             z = static_cast<int>(std::round(ALL_positions_[i][2] + n_/2.0));
 
-
-            omega = GAMMA * (Bz_[x][y][z] + B0_val_); 
+            omega =   GAMMA * (Bz_[x][y][z] + B0_val_); 
          
             phase = std::exp(std::complex<double>(0, -omega * t));
             totalPhase += phase;
