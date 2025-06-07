@@ -61,12 +61,11 @@ Voxel::Voxel(int n, double L, double Xtot, double eta, int numberofprotons, std:
         CalculateDzMap();
 
         std::cout << "Set Random Seed Generator..." << std::endl;
-        std::random_device rd;  // Seed generator
+        std::random_device rd; 
         std::mt19937 gen(rd());
         
         std::uniform_int_distribution<int> dist(0, n_);
         std::lognormal_distribution<double> lognorm_dist(mu_, sigma_);
-
     
         std::cout << "Create Susceptibility Artifacts..." << std::endl;
         
@@ -91,7 +90,8 @@ Voxel::Voxel(int n, double L, double Xtot, double eta, int numberofprotons, std:
 
         Occupied_positions_ = GetOccupiedPositions(artifacts);
 
-        double sus = Xtot_ / Occupied_positions_.size() ;
+        double sus = Xtot_ / Occupied_positions_.size();
+
         for (auto& artifact : artifacts) {
             
             for (auto& pos : artifact.positions_) {
@@ -127,8 +127,6 @@ Voxel::Voxel(int n, double L, double Xtot, double eta, int numberofprotons, std:
         for (int i = 0; i < numberofprotons_; i++) {
             Protons_.push_back(Proton(ALL_positions_[i]));
         }
-
-        Protons_init_ = Protons_;
 
         shift3DArray(Bz_, n_);
       
@@ -183,7 +181,7 @@ double Voxel::interpolateBz(double x, double y, double z) {
     return c0 * (1 - zd) + c1 * zd;
 }
 
-std::complex<double> Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {    
+SignalResults Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {    
         double steps = static_cast<double>(NrOfSteps);
         double dtM_ = dt_ / steps;
         std::vector<std::vector<std::vector<double>>> Paths(numberofprotons_, 
@@ -242,31 +240,117 @@ std::complex<double> Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {
         
         int x,y,z;
         std::complex<double> totalPhase;
+        std::vector<double> all_phases;
+        all_phases.reserve(numberofprotons_);
         double omega;
         totalPhase = 0; 
         
         for(int i = 0; i < numberofprotons_; i++) { 
-              // Startwert 1 + 0i
             for (int j = 0; j < NrOfSteps; j++) {
 
-                omega = GAMMA * (interpolateBz(Paths[i][0][j] + n_/2.0,
-                Paths[i][1][j] + n_/2.0,
-                Paths[i][2][j] + n_/2.0) + B0_val_);
+                omega = GAMMA * (interpolateBz(Paths[i][0][j] + n_/2.0, Paths[i][1][j] + n_/2.0, Paths[i][2][j] + n_/2.0));
 
                 Protons_[i].phase_ *= std::exp(std::complex<double>(0,- omega *  dtM_));
-                
+                all_phases.push_back(std::arg(Protons_[i].phase_));
             }
-
-            //Protons_[i].TrackPhases.push_back(Protons_[i].phase_);
+            
             totalPhase += Protons_[i].phase_;
 
         }
         
+
         totalPhase = totalPhase / static_cast<double>(numberofprotons_);
      
-        return totalPhase;
+        double mu1 = 0, mu2 = 0, mu3 = 0, mu4 = 0;
+        for (double phi : all_phases) {
+            mu1 += phi;
+            mu2 += phi * phi;
+            mu3 += phi * phi * phi;
+            mu4 += phi * phi * phi * phi;
+        }
 
+        mu1 /= all_phases.size();
+        mu2 /= all_phases.size();
+        mu3 /= all_phases.size();
+        mu4 /= all_phases.size();
+
+        double kappa1 = mu1;
+        double kappa2 = mu2 - mu1 * mu1;
+        double kappa3 = mu3 - 3 * mu2 * mu1 + 2 * mu1 * mu1 * mu1;
+        double kappa4 = mu4 - 4 * mu3 * mu1 + 6 * mu2 * mu1 * mu1 - 3 * mu1 * mu1 * mu1 * mu1;
+
+        std::complex<double> signal_kappa_2 = std::exp(std::complex<double>(0, kappa1) - 0.5 * kappa2);
+
+        std::complex<double> signal_kappa_4 = std::exp(std::complex<double>(0, kappa1)
+            - 0.5 * kappa2
+            + std::complex<double>(0, 1.0/6.0) * kappa3
+            - 1.0/24.0 * kappa4
+        );
+
+        std::vector<double> moments = {mu1, mu2, mu3, mu4};
+        std::vector<double> cumulants = {kappa1, kappa2, kappa3, kappa4};
+        
+        SignalResults results {
+                signal_kappa_2,
+                signal_kappa_4,
+                moments,
+                cumulants,
+                totalPhase
+            };
+
+     
+        return results;
     }
+
+
+std::vector<double> Voxel::ComputeTemporalACF(int tsteps) {
+    std::vector<double> acf(tsteps, 0.0);
+    std::vector<int> count(tsteps, 0);
+
+    double omegaMean = 0.0;
+    double totalCount = 0;
+    for (const auto& p : Protons_) {
+        for (const auto& pos : p.TrackPostitions_) {
+
+            omegaMean += interpolateBz(pos[0] + n_/2, pos[1] + n_/2, pos[2] + n_/2);
+            totalCount++;
+        }
+    }
+
+    omegaMean /= totalCount;
+
+    #pragma omp parallel for
+    for (int lag = 0; lag < tsteps; ++lag) {
+        double sum = 0.0;
+        int validCount = 0;
+
+        double localSum = 0.0;
+        int localCount = 0;
+
+        for (const auto& p : Protons_) {
+            int T_p = static_cast<int>(p.TrackPostitions_.size());
+            for (int t = 0; t + lag < T_p; ++t) {
+                double x1 = p.TrackPostitions_[t][0] + n_ / 2;
+                double y1 = p.TrackPostitions_[t][1] + n_ / 2;
+                double z1 = p.TrackPostitions_[t][2] + n_ / 2;
+                double x2 = p.TrackPostitions_[t + lag][0] + n_ / 2;
+                double y2 = p.TrackPostitions_[t + lag][1] + n_ / 2;
+                double z2 = p.TrackPostitions_[t + lag][2] + n_ / 2;
+
+                double omega1 = interpolateBz(x1, y1, z1) - omegaMean;
+                double omega2 = interpolateBz(x2, y2, z2) - omegaMean;
+
+                localSum += omega1 * omega2;
+                localCount++;
+            }
+        }
+
+     
+        acf[lag] = (localCount > 0) ? (localSum / localCount) : 0.0;
+    }
+
+    return acf;
+}
 
 std::complex<double>  Voxel::ComputeSignalStatic(double t) { 
     static int x,y,z;
@@ -279,7 +363,7 @@ std::complex<double>  Voxel::ComputeSignalStatic(double t) {
             y = static_cast<int>(std::round(ALL_positions_[i][1] + n_/2.0));
             z = static_cast<int>(std::round(ALL_positions_[i][2] + n_/2.0));
 
-            omega =   GAMMA * (Bz_[x][y][z] + B0_val_); 
+            omega =   GAMMA * (Bz_[x][y][z]); 
          
             phase = std::exp(std::complex<double>(0, -omega * t));
             totalPhase += phase;
@@ -287,8 +371,7 @@ std::complex<double>  Voxel::ComputeSignalStatic(double t) {
         }
         
         return totalPhase / static_cast<double>(numberofprotons_);
-
-}
+    }
 
 std::vector<std::vector<double>> GetALL_positions(int xlen, int ylen, int zlen, int num_positions, const std::set<std::vector<int>>& Occupied_positions) {
     std::set<std::vector<double>> final_positions;
@@ -322,4 +405,5 @@ std::set<std::vector<int>> GetOccupiedPositions(const std::vector<Artifact>& art
 
     return all_positions;
 }
+
 

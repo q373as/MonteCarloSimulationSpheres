@@ -9,8 +9,9 @@
 #include <nlohmann/json.hpp>
 #include <fstream>
 #include "src.hpp"
+#include <netcdf>
 
-
+using namespace netCDF;  
 using json = nlohmann::json;
 
 struct SimulationConfig {
@@ -46,14 +47,6 @@ void shift3DArray(std::vector<std::vector<std::vector<double>>>& array, int n);
 
 bool isElement(const std::set<std::vector<int>>& s, const std::vector<double>& v);
 
-void SaveSignalDecay(const std::vector<double>& times, const std::vector<double>& magnitudes, const std::vector<double>& signal, const std::vector<double>& star, const std::vector<double>& Hyper, std::string filename);
-
-void SaveBzMap(const Voxel& voxel, const  std::string& filename);
-
-void SaveDiffusionPaths(const Voxel& voxel, const std::string& filename);
-
-void SaveChiMap(const Voxel& voxel, const std::string& filename);
-
 double pochhammer(double x, int n);
 
 double hypergeom_1F2(double a, double b1, double b2, double z, int max_terms = 100, double tol = 1e-50);
@@ -62,6 +55,25 @@ double f(double delta_omega, double t);
 
 void saveConfigToJson(const SimulationConfig& cfg, const std::string& filename);
 
-double Jensen(double t, double tc, double alpha);
+void SaveAllToNetCDF(
+    const std::vector<double>& times,
+    const std::vector<double>& magnitudes,
+    const std::vector<double>& signal,
+    const std::vector<double>& star,
+    const std::vector<double>& Hyper,
+    const std::vector<double>& correlation,
+    const std::vector<double>& interPhase,
+    const std::vector<double>& statPhase,
+    const std::vector<double>& kappa2Mag,
+    const std::vector<double>& kappa2Phase,
+    const std::vector<double>& kappa4Mag,
+    const std::vector<double>& kappa4Phase,
+    const std::vector<std::vector<double>>& allMoments,
+    const std::vector<std::vector<double>>& allCumulants,
+    const std::string& filename,
+    const std::vector<std::vector<std::vector<double>>>& Bz,
+    const std::vector<std::vector<std::vector<double>>>& ChiMap,
+    const std::vector<std::vector<std::vector<double>>>& diffusionPaths
+);
 
 #endif

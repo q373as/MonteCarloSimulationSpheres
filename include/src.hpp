@@ -46,6 +46,15 @@ class Proton {
         Proton(const std::vector<double>& position);
 };
 
+struct SignalResults {
+    std::complex<double> signal_kappa_2;
+    std::complex<double> signal_kappa_4;
+    std::vector<double> moments;         
+    std::vector<double> cumulants;        
+    std::complex<double> totalPhase;      
+};
+
+
 /**
  * @brief Represents the simulation domain (a voxel grid) and manages diffusion, susceptibility and signal.
  */
@@ -53,14 +62,14 @@ class Voxel {
     public:
         int n_;                                       ///< Grid size per dimension (n x n x n)
         double L_;                                    ///< Physical voxel size in m)
-        int N_ = 0;                                   ///< Total number of grid points
+        int N_ = 0;                                   ///< Total number Artifacts. NULL per default
         double mu_, sigma_;                           ///< Parameters for distribution of susceptibility Artifacts
-        double Xtot_;                                 ///< Total volume fraction of susceptibility sources
+        double Xtot_;                                 ///< Total Susceptiblity of susceptibility sources
         int numberofprotons_;                         ///< Number of protons in the simulation
         
-        double dt_;                                   ///< Time step size for diffusion
+        double dt_;                                   ///< Time step size for readout
         double D_;                                    ///< Diffusion coefficient
-        double eta_;                                  ///< Susceptibility scaling factor
+        double eta_;                                  ///< Volumee fraction of artifacts
         double DeltaChi_ = eta_ * Xtot_;              ///< Effective susceptibility
 
         double nb_ = static_cast<double>(n_);         ///< Grid size as double
@@ -74,7 +83,7 @@ class Voxel {
         std::set<std::vector<int>> Occupied_positions_;          ///< Voxel indices already occupied by artifacts
         std::vector<Artifact> artifacts;                         ///< List of all placed artifacts
         std::vector<Proton> Protons_;                            ///< Active proton list (updated during simulation)
-        std::vector<Proton> Protons_init_;                       ///< Initial proton states (for reset/comparison)
+        
 
         fftw_complex* dz_fftw_;                 ///< FFTW array: dipole kernel
         fftw_complex* ChiMap_fftw_;             ///< FFTW array: susceptibility map
@@ -124,7 +133,7 @@ class Voxel {
          * @param t Total simulation time
          * @return Complex-valued MR signal
          */
-        std::complex<double> SimulateDiffusionSteps(int NrOfSteps, double t);
+        SignalResults SimulateDiffusionSteps(int NrOfSteps, double t);
 
         /**
          * @brief Computes the static signal (without diffusion).
@@ -132,6 +141,8 @@ class Voxel {
          * @return Complex-valued MR signal
          */
         std::complex<double> ComputeSignalStatic(double t);
+
+        std::vector<double> ComputeTemporalACF(int tsteps);
 };
 
 /**
@@ -153,5 +164,9 @@ std::set<std::vector<int>> GetOccupiedPositions(const std::vector<Artifact>& art
 std::vector<std::vector<double>> GetALL_positions(int xlen, int ylen, int zlen,
                                                   int num_positions,
                                                   const std::set<std::vector<int>>& Occupied_positions);
+
+
+
+
 
 #endif // SRC_HPP

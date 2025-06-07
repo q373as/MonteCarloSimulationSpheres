@@ -3,6 +3,8 @@
 #include <fstream>
 #include "helper.hpp"
 
+using namespace netCDF;
+using namespace netCDF::exceptions;
 
 
 SimulationConfig loadConfig(const std::string& filename) {
@@ -141,77 +143,6 @@ bool isElement(const std::set<std::vector<int>>& s, const std::vector<double>& v
     return s.find(v_rounded) != s.end();
 }
 
-void SaveSignalDecay(const std::vector<double>& times, const std::vector<double>& magnitudes, const std::vector<double>& signal, const std::vector<double>& star, const std::vector<double>& Hyper, std::string filename){
-        std::ofstream outFile(filename);
-
-        if (!outFile.is_open()) {
-        std::cerr << "Error opening signal_decay file for writing!\n";
-        return;
-        }
-
-        outFile << "Time\tStaticDephasing\tDiffusion\tAnalytic\tHyper\n";
-        for (size_t i = 0; i < times.size(); ++i) {
-                outFile << times[i] << "\t" 
-                << magnitudes[i] << "\t" 
-                << signal[i] << "\t" 
-                << star[i] << "\t"
-                << Hyper[i] << "\n";
-                }
-        std::cout << "Signal decay saved\n";
-    }
-
-void SaveBzMap(const Voxel& voxel, const std::string& filename){
-    std::ofstream bzFile(filename);
-    if (!bzFile.is_open()) {
-        std::cerr << "Error opening Bz_map file for writing!\n";
-        return;
-    }
-
-    for (size_t i = 0; i < voxel.Bz_.size(); ++i) {
-        for (size_t j = 0; j < voxel.Bz_[i].size(); ++j) {
-            for (size_t k = 0; k < voxel.Bz_[i][j].size(); ++k) {
-                bzFile << i << " " << j << " " << k << " " << voxel.Bz_[i][j][k] << "\n";
-            }
-        }
-    }
-    std::cout << "Bz map saved" << std::endl;
-}
-
-void SaveDiffusionPaths(const Voxel& voxel, const std::string& filename) {
-    std::ofstream pathsFile(filename);
-    if (pathsFile.is_open()) {
-        for (size_t p = 0; p < voxel.Protons_.size(); ++p) {
-            pathsFile << "# Proton " << p << "\n";
-            const auto& proton = voxel.Protons_[p];
-            for (size_t step = 0; step < proton.TrackPostitions_.size(); ++step) {
-                const auto& pos = proton.TrackPostitions_[step];
-                pathsFile << pos[0] << "\t" << pos[1] << "\t" << pos[2] << "\n";
-            }
-            pathsFile << "\n";  // Leerzeile zwischen Protonen
-        }
-        std::cout << "Diffusion paths saved\n";
-    } else {
-        std::cerr << "Error opening diffusion_paths file for writing!\n";
-    }
-}
-
-void SaveChiMap(const Voxel& voxel, const std::string& filename){
-    std::ofstream chiFile(filename);
-    if (!chiFile.is_open()) {
-        std::cerr << "Error opening Chi_map file for writing!\n";
-        return;
-    }
-
-    for (size_t i = 0; i < voxel.ChiMap_.size(); ++i) {
-        for (size_t j = 0; j < voxel.ChiMap_[i].size(); ++j) {
-            for (size_t k = 0; k < voxel.ChiMap_[i][j].size(); ++k) {
-                chiFile << i << " " << j << " " << k << " " << voxel.ChiMap_[i][j][k] << "\n";
-            }
-        }
-    }
-    std::cout << "Chi map saved\n";
-}
-
 double pochhammer(double x, int n) {
     double result = 1.0;
     for (int i = 0; i < n; ++i)
@@ -260,4 +191,149 @@ void saveConfigToJson(const SimulationConfig& cfg, const std::string& filename) 
 
     std::ofstream file(filename);
     file << j.dump(2);  // pretty print with indent=2
+}
+
+void SaveAllToNetCDF(
+    const std::vector<double>& times,
+    const std::vector<double>& magnitudes,
+    const std::vector<double>& signal,
+    const std::vector<double>& star,
+    const std::vector<double>& Hyper,
+    const std::vector<double>& correlation,
+    const std::vector<double>& interPhase,
+    const std::vector<double>& statPhase,
+    const std::vector<double>& kappa2Mag,
+    const std::vector<double>& kappa2Phase,
+    const std::vector<double>& kappa4Mag,
+    const std::vector<double>& kappa4Phase,
+    const std::vector<std::vector<double>>& allMoments,
+    const std::vector<std::vector<double>>& allCumulants,
+    const std::string& filename,
+    const std::vector<std::vector<std::vector<double>>>& Bz,
+    const std::vector<std::vector<std::vector<double>>>& ChiMap,
+    const std::vector<std::vector<std::vector<double>>>& diffusionPaths
+) {
+    try {
+        NcFile dataFile(filename, NcFile::replace);
+
+        // Dimensionen definieren
+        auto tsteps = times.size();
+        auto moments_size = 4;
+        auto nProtons = diffusionPaths.size();
+
+        // Zeit-Dimension
+        NcDim timeDim = dataFile.addDim("time", tsteps);
+
+        // Moments und Cumulants Dimension
+        NcDim momentsDim = dataFile.addDim("moments", moments_size);
+
+        // Diffusionspfade Dimensionen: protonen, steps, coords (3)
+        size_t maxSteps = 0;
+        for (const auto& path : diffusionPaths)
+            if (path.size() > maxSteps)
+                maxSteps = path.size();
+
+        NcDim protonDim = dataFile.addDim("protons", nProtons);
+        NcDim stepDim = dataFile.addDim("steps", maxSteps);
+        NcDim coordDim = dataFile.addDim("coord", 3);
+
+        // Variablen anlegen
+        auto timeVar = dataFile.addVar("time", ncDouble, timeDim);
+        auto magnVar = dataFile.addVar("magnitude_static", ncDouble, timeDim);
+        auto signalVar = dataFile.addVar("signal_diffusion", ncDouble, timeDim);
+        auto starVar = dataFile.addVar("analytic_star", ncDouble, timeDim);
+        auto hyperVar = dataFile.addVar("analytic_hyper", ncDouble, timeDim);
+        auto corrVar = dataFile.addVar("correlation", ncDouble, timeDim);
+        auto interPhaseVar = dataFile.addVar("interPhase", ncDouble, timeDim);
+        auto statPhaseVar = dataFile.addVar("statPhase", ncDouble, timeDim);
+
+        auto k2MagVar = dataFile.addVar("kappa2_magnitude", ncDouble, timeDim);
+        auto k2PhaseVar = dataFile.addVar("kappa2_phase", ncDouble, timeDim);
+        auto k4MagVar = dataFile.addVar("kappa4_magnitude", ncDouble, timeDim);
+        auto k4PhaseVar = dataFile.addVar("kappa4_phase", ncDouble, timeDim);
+
+        // Moments und Cumulants (2D: time x moments)
+        std::vector<NcDim> dims2D = {timeDim, momentsDim};
+        auto momentsVar = dataFile.addVar("moments", ncDouble, dims2D);
+        auto cumulantsVar = dataFile.addVar("cumulants", ncDouble, dims2D);
+
+        // 3D Voxel-Felder: Bz, ChiMap
+        size_t Nx = Bz.size();
+        size_t Ny = (Nx > 0) ? Bz[0].size() : 0;
+        size_t Nz = (Ny > 0) ? Bz[0][0].size() : 0;
+
+        NcDim xDim = dataFile.addDim("x", Nx);
+        NcDim yDim = dataFile.addDim("y", Ny);
+        NcDim zDim = dataFile.addDim("z", Nz);
+
+        auto BzVar = dataFile.addVar("Bz", ncDouble, {xDim, yDim, zDim});
+        auto ChiVar = dataFile.addVar("ChiMap", ncDouble, {xDim, yDim, zDim});
+
+        // Diffusionspfade: protons x steps x 3 coords
+        auto diffusionVar = dataFile.addVar("diffusionPaths", ncDouble, {protonDim, stepDim, coordDim});
+
+        // Daten schreiben
+
+        timeVar.putVar(times.data());
+        magnVar.putVar(magnitudes.data());
+        signalVar.putVar(signal.data());
+        starVar.putVar(star.data());
+        hyperVar.putVar(Hyper.data());
+        corrVar.putVar(correlation.data());
+        interPhaseVar.putVar(interPhase.data());
+        statPhaseVar.putVar(statPhase.data());
+
+        k2MagVar.putVar(kappa2Mag.data());
+        k2PhaseVar.putVar(kappa2Phase.data());
+        k4MagVar.putVar(kappa4Mag.data());
+        k4PhaseVar.putVar(kappa4Phase.data());
+
+        // Momente & Kumulanten müssen als flaches Array geschrieben werden
+        std::vector<double> momentsFlat(tsteps * moments_size);
+        std::vector<double> cumulantsFlat(tsteps * moments_size);
+
+        for (size_t i = 0; i < tsteps; ++i) {
+            for (size_t j = 0; j < moments_size; ++j) {
+                momentsFlat[i * moments_size + j] = allMoments[i][j];
+                cumulantsFlat[i * moments_size + j] = allCumulants[i][j];
+            }
+        }
+
+        momentsVar.putVar(momentsFlat.data());
+        cumulantsVar.putVar(cumulantsFlat.data());
+
+        // Bz und ChiMap (3D Felder)
+        std::vector<double> BzFlat;
+        BzFlat.reserve(Nx * Ny * Nz);
+        for (size_t i = 0; i < Nx; ++i)
+            for (size_t j = 0; j < Ny; ++j)
+                for (size_t k = 0; k < Nz; ++k)
+                    BzFlat.push_back(Bz[i][j][k]);
+        BzVar.putVar(BzFlat.data());
+
+        std::vector<double> ChiFlat;
+        ChiFlat.reserve(Nx * Ny * Nz);
+        for (size_t i = 0; i < Nx; ++i)
+            for (size_t j = 0; j < Ny; ++j)
+                for (size_t k = 0; k < Nz; ++k)
+                    ChiFlat.push_back(ChiMap[i][j][k]);
+        ChiVar.putVar(ChiFlat.data());
+
+        // Diffusionspfade (protons x steps x 3)
+        // Nullwerte bei kürzeren Pfaden auffüllen mit NaN oder 0 (hier 0)
+        std::vector<double> diffusionFlat(nProtons * maxSteps * 3, 0.0);
+        for (size_t p = 0; p < nProtons; ++p) {
+            for (size_t s = 0; s < diffusionPaths[p].size(); ++s) {
+                diffusionFlat[(p * maxSteps + s) * 3 + 0] = diffusionPaths[p][s][0];
+                diffusionFlat[(p * maxSteps + s) * 3 + 1] = diffusionPaths[p][s][1];
+                diffusionFlat[(p * maxSteps + s) * 3 + 2] = diffusionPaths[p][s][2];
+            }
+        }
+        diffusionVar.putVar(diffusionFlat.data());
+
+        std::cout << "Daten erfolgreich in NetCDF Datei gespeichert: " << filename << std::endl;
+
+    } catch (NcException& e) {
+        std::cerr << "Fehler beim Schreiben der NetCDF Datei: " << e.what() << std::endl;
+    }
 }
