@@ -261,23 +261,27 @@ SignalResults Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {
 
         totalPhase = totalPhase / static_cast<double>(numberofprotons_);
      
-        double mu1 = 0, mu2 = 0, mu3 = 0, mu4 = 0;
+        double m1 = 0.0;
+        for (double phi : all_phases) m1 += phi;
+        m1 /= all_phases.size();
+
+        double m2 = 0, m3 = 0, m4 = 0;
         for (double phi : all_phases) {
-            mu1 += phi;
-            mu2 += phi * phi;
-            mu3 += phi * phi * phi;
-            mu4 += phi * phi * phi * phi;
+            double dphi = phi - m1;
+            m2 += dphi * dphi;
+            m3 += dphi * dphi * dphi;
+            m4 += dphi * dphi * dphi * dphi;
         }
+        m2 /= all_phases.size();
+        m3 /= all_phases.size();
+        m4 /= all_phases.size();
 
-        mu1 /= all_phases.size();
-        mu2 /= all_phases.size();
-        mu3 /= all_phases.size();
-        mu4 /= all_phases.size();
+   
+        double kappa1 = m1;              // Mittelwert
+        double kappa2 = m2;                // Varianz
+        double kappa3 = m3;                // Schiefe * Varianz^1.5
+        double kappa4 = m4 - 3 * m2 * m2;  // Kurtosis * Varianz^2
 
-        double kappa1 = mu1;
-        double kappa2 = mu2 - mu1 * mu1;
-        double kappa3 = mu3 - 3 * mu2 * mu1 + 2 * mu1 * mu1 * mu1;
-        double kappa4 = mu4 - 4 * mu3 * mu1 + 6 * mu2 * mu1 * mu1 - 3 * mu1 * mu1 * mu1 * mu1;
 
         std::complex<double> signal_kappa_2 = std::exp(std::complex<double>(0, kappa1) - 0.5 * kappa2);
 
@@ -287,7 +291,7 @@ SignalResults Voxel::SimulateDiffusionSteps(int NrOfSteps, double t) {
             - 1.0/24.0 * kappa4
         );
 
-        std::vector<double> moments = {mu1, mu2, mu3, mu4};
+        std::vector<double> moments = {m1, m2, m3, m4};
         std::vector<double> cumulants = {kappa1, kappa2, kappa3, kappa4};
         
         SignalResults results {
