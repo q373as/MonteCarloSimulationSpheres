@@ -10,113 +10,93 @@ int main() {
 
     SimulationConfig cfg = loadConfig("../config.json");
 
-    double nd = static_cast<double>(cfg.n);
-    double voxelVolume = 1.0 / (nd * nd * nd);
+    Voxel voxel(cfg.n, cfg.L, cfg.Xtot, cfg.eta, cfg.numberofprotons, cfg.B0vec, cfg.D, cfg.dt, cfg.mu, cfg.sigma, cfg.ratio);
 
-    Voxel voxel(cfg.n, cfg.L, cfg.Xtot, cfg.eta, cfg.numberofprotons, cfg.B0vec, cfg.D, cfg.dt, cfg.mu, cfg.sigma);
-
-
-    cfg.R2p = (8.0 * M_PI * M_PI) * cfg.eta * GAMMA * 3.0 * cfg.Xtot / (9.0 * std::sqrt(3.0));
+    cfg.R2p =   GAMMA * cfg.B0 * cfg.Xtot / (9.0 * std::sqrt(3.0));
+    cfg.tc = 6.0 * M_PI / (GAMMA * cfg.B0 * cfg.Xtot / cfg.eta);
+    cfg.N = voxel.N_;
 
     std::cout << "Volume Fraction (eta): " << cfg.eta << std::endl;
     std::cout << "Voxel Susceptibility (Xtot): " << cfg.Xtot << std::endl;
     std::cout << "Occupieed Positions: " << voxel.Occupied_positions_.size() << std::endl;
-    std::cout << "Artifact Susceptibility (DeltaChi): " << voxel.DeltaChi_ << std::endl;
-    std::cout << "R2': " << cfg.R2p << std::endl;
+    std::cout << "Sources Ratio: " << cfg.ratio << std::endl;
+    std::cout << "R2': " << cfg.R2p  << std::endl;
 
-    cfg.tc = 3.0 / (4.0 * M_PI * GAMMA * cfg.B0 * cfg.Xtot);
-    cfg.N = voxel.N_;
 
-    // Vektoren für die Speicherung
-    std::vector<double> times, magnitudes, signal, star, Hyper, correlation, interPhase, statPhase;
-
-    // Neu: für kappa-Signale (komplex) abs und phase speichern
-    std::vector<double> kappa2Mag, kappa2Phase;
-    std::vector<double> kappa4Mag, kappa4Phase;
-
-    // Für Momente und Kumulanten (je 4 Einträge pro Zeitschritt)
-    std::vector<std::vector<double>> allMoments;   // size: tsteps x 4
-    std::vector<std::vector<double>> allCumulants; // size: tsteps x 4
-
+    std::vector<double> times, signal, staticmag, star, Hyper, kappa2, kappa4, SEsignal;
+    std::vector<std::vector<double>> allMoments, allCumulants;
+    
     for (int t = 0; t < cfg.tsteps; ++t) {
         double current_time = t * cfg.dt;
 
-        SignalResults result = voxel.SimulateDiffusionSteps(cfg.DiffSteps, current_time);
-
-        // Diffusionssignal = totalPhase
-        std::complex<double> interSignal = result.totalPhase;
-        double intermag = std::abs(interSignal) * std::exp(-cfg.R2 * current_time);
-        double interp = std::arg(interSignal);
-
-        // kappa_2 Signal
-        double k2mag = std::abs(result.signal_kappa_2) * std::exp(-cfg.R2 * current_time);
-        double k2phase = std::arg(result.signal_kappa_2);
-
-        // kappa_4 Signal
-        double k4mag = std::abs(result.signal_kappa_4) * std::exp(-cfg.R2 * current_time);
-        double k4phase = std::arg(result.signal_kappa_4);
-
-        // Statisches Signal
+        SignalResults result = voxel.SimulateDiffusionSteps(cfg.DiffSteps);
         std::complex<double> staticSignal = voxel.ComputeSignalStatic(current_time);
+        
+        
+        double intermag = std::abs(result.totalPhase) * std::exp(-cfg.R2 * current_time);
+        double analyticResult = std::exp(-cfg.R2p * current_time) * std::exp(-cfg.R2 * current_time);
+        double hyperResult = std::exp(-cfg.eta * f(1.0 / cfg.tc, current_time)) * std::exp(-cfg.R2 * current_time);
+        double k2 = std::abs(result.signal_kappa_2) * std::exp(-cfg.R2 * current_time);
+        double k4 = std::abs(result.signal_kappa_4) * std::exp(-cfg.R2 * current_time);
         double statmag = std::abs(staticSignal) * std::exp(-cfg.R2 * current_time);
         double statp = std::arg(staticSignal);
 
-        // Analytische Signale
-        double hyperResult = std::exp(-cfg.eta * f(1.0 / cfg.tc, current_time)) * std::exp(-cfg.R2 * current_time);
-        double analyticResult = std::exp(-cfg.R2p * current_time) * std::exp(-cfg.R2 * current_time);
 
+        // Speichern
+        times.push_back(current_time);
+        signal.push_back(intermag);
+        staticmag.push_back(statmag);
+        star.push_back(analyticResult);
+        Hyper.push_back(hyperResult);
+        allMoments.push_back(result.moments);
+        allCumulants.push_back(result.cumulants);
+        kappa2.push_back(k2);
+        kappa4.push_back(k4);
+        SEsignal.push_back(0.0); // Placeholder for Spin Echo signal
+      
         std::cout << "Timestep: " << current_time
                   << " Diffusion: " << intermag
-                  << " Kappa_2: " << k2mag << " kappa_4: " << k4mag 
+                  << " Kappa_2: " << k2 << " kappa_4: " << k4
                   << " Static Dephasing: " << statmag
                   << " Hyper: " << hyperResult
                   << " Analytic: " << analyticResult
                   << std::endl;
 
-        // Speichern
-        times.push_back(current_time);
-        magnitudes.push_back(statmag);
-        signal.push_back(intermag);
-        star.push_back(analyticResult);
-        Hyper.push_back(hyperResult);
-        interPhase.push_back(interp);
-        statPhase.push_back(statp);
-
-        kappa2Mag.push_back(k2mag);
-        kappa2Phase.push_back(k2phase);
-        kappa4Mag.push_back(k4mag);
-        kappa4Phase.push_back(k4phase);
-
-        // Momente und Kumulanten
-        allMoments.push_back(result.moments);
-        allCumulants.push_back(result.cumulants);
     }
 
-    correlation = voxel.ComputeTemporalACF(cfg.tsteps);
+    std::cout << "Calculate Correlation function..." << std::endl; 
+    auto correlation = voxel.ComputeTemporalACF(cfg.tsteps);
+
+    std::cout << "Calculate Spacial Correlations..." << std::endl;
+    auto [Cr_pp, Cr_nn, Cr_pn] = voxel.ComputeSpatialCorrelations();
+
+
+    /*
+    std::cout << "Start Simulation of SE..." << std::endl;
+    for (int t = 0; t < cfg.tsteps; ++t) {
+        double current_time = t * cfg.dt;
+
+        std::complex<double> se = voxel.SimulateSpinEchoSignal(cfg.DiffSteps, cfg.dt, current_time);
+
+        double seMag = std::abs(se) * std::exp(-cfg.R2 * current_time);
+
+        SEsignal.push_back(seMag);
+
+        std::cout << "SE Time: " << current_time << " SE Signal Magnitude: " << seMag << std::endl;
+    }
+    */
 
     saveConfigToJson(cfg, "output/config" + std::to_string(cfg.index) + ".json");
-
     std::string filename = "output/simulation_" + std::to_string(cfg.index) + ".nc";
 
-    std::vector<std::vector<std::vector<double>>> diffusionPaths;
-    diffusionPaths.reserve(voxel.Protons_.size());
+    SaveAllToNetCDF(times, signal, staticmag, star, Hyper, correlation,
+                    allMoments, allCumulants, kappa2, kappa4, SEsignal,
+                    Cr_pp, Cr_nn, Cr_pn, filename, voxel.Protons_);
+    
+    SaveMapsToNETCDF("output/Maps_" + std::to_string(cfg.index) + ".nc", voxel.ChiMap_, voxel.Bz_, cfg.L);
 
-    for (const auto& proton : voxel.Protons_) {
-        std::vector<std::vector<double>> protonPath;
-        protonPath.reserve(proton.TrackPostitions_.size());
+    std::cout << "Simulation abgeschlossen und gespeichert unter: " << filename << std::endl;
 
-        for (const auto& pos : proton.TrackPostitions_) {
-            protonPath.push_back({pos[0], pos[1], pos[2]});
-        }
-        diffusionPaths.push_back(std::move(protonPath));
-    }
-
-    // Speichere alle Daten, inkl. neuer kappa-Signale, Momente, Kumulanten
-    SaveAllToNetCDF(times, magnitudes, signal, star, Hyper, correlation, interPhase, statPhase,
-                    kappa2Mag, kappa2Phase, kappa4Mag, kappa4Phase,
-                    allMoments, allCumulants,
-                    filename, voxel.Bz_, voxel.ChiMap_, diffusionPaths);
 
     return 0;
-
 }

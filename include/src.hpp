@@ -13,9 +13,11 @@
 class Artifact {
     public:
         std::vector<int> positionmain_;                     ///< Main position of the artifact (voxel indices)
-        double suscept_;                                    ///< Susceptibility value of the artifact
+        double suspV_;                                    ///< Susceptibility value of the artifact
         double totsuscept_;                                 ///< Total susceptibility including volume effects
-        int size_;                                          ///< Size of the artifact (e.g. sphere radius in voxels)
+        int size_;    
+        double Vm_;  
+        double etai_;                                   ///< Size of the artifact (e.g. sphere radius in voxels) 
         std::vector<std::vector<int>> positions_;           ///< All occupied positions by the artifact
 
         /**
@@ -26,7 +28,7 @@ class Artifact {
          * @param suscept Base susceptibility
          * @param n Grid size (for boundary checking)
          */
-        Artifact(std::vector<int> positionmain, int pm, int size, double suscept, int n);
+        Artifact(std::vector<int> positionmain, int pm, int size, int n);
 };
 
 /**
@@ -34,11 +36,11 @@ class Artifact {
  */
 class Proton {
     public:
+        std::vector<double> initial_position_;
         std::vector<double> position_;                      ///< Continuous position in voxel coordinates
         std::complex<double> phase_;                        ///< Complex-valued phase of the proton
         std::vector<std::vector<double>> TrackPostitions_;  ///< History of positions during diffusion
-        std::vector<std::complex<double>> TrackPhases;      ///< History of phases during diffusion
-
+        std::vector<std::complex<double>> TrackPhases_;      ///< History of phases during diffusion
         /**
          * @brief Constructs a Proton at a given position.
          * @param position 3D position in voxel coordinates
@@ -69,16 +71,15 @@ class Voxel {
         
         double dt_;                                   ///< Time step size for readout
         double D_;                                    ///< Diffusion coefficient
-        double eta_;                                  ///< Volumee fraction of artifacts
-        double DeltaChi_ = eta_ * Xtot_;              ///< Effective susceptibility
+        double eta_, ratio_;                                  ///< Volumee fraction of artifacts          ///< Effective susceptibility
 
         double nb_ = static_cast<double>(n_);         ///< Grid size as double
         double Vm_ = 1 / (nb_ * nb_ * nb_);           ///< Voxel volume (assuming unit cube)
 
         std::vector<double> B0_;                      ///< Background magnetic field direction (3D)
-        std::vector<std::vector<std::vector<double>>> dz_;       ///< Dipole kernel in spatial domain
         std::vector<std::vector<std::vector<double>>> ChiMap_;   ///< Susceptibility map
-        std::vector<std::vector<std::vector<double>>> Bz_;       ///< Field map (Bz) after convolution
+        std::vector<std::vector<std::vector<double>>> Bz_;  
+        std::vector<std::vector<std::vector<std::complex<double>>>> Dk_;      ///< Field map (Bz) after convolution
         std::vector<std::vector<double>> ALL_positions_;         ///< All possible proton starting positions
         std::set<std::vector<int>> Occupied_positions_;          ///< Voxel indices already occupied by artifacts
         std::vector<Artifact> artifacts;                         ///< List of all placed artifacts
@@ -105,7 +106,7 @@ class Voxel {
          * @param sigma Susceptibility standard deviation
          */
         Voxel(int n, double L, double Xtot, double eta, int numberofprotons,
-            std::vector<double> B0, double D, double dt, double mu, double sigma);
+            std::vector<double> B0, double D, double dt, double mu, double sigma, double ratio);
 
         /**
          * @brief Saves all entries of a 3D array (for debugging or export).
@@ -116,15 +117,7 @@ class Voxel {
         /**
          * @brief Computes the dipole kernel dz in the spatial domain.
          */
-        void CalculateDzMap();
-
-        /**
-         * @brief Interpolates the Bz field at a continuous position.
-         * @param x X-position
-         * @param y Y-position
-         * @param z Z-position
-         * @return Interpolated Bz value
-         */
+    
         double interpolateBz(double x, double y, double z);
 
         /**
@@ -133,7 +126,7 @@ class Voxel {
          * @param t Total simulation time
          * @return Complex-valued MR signal
          */
-        SignalResults SimulateDiffusionSteps(int NrOfSteps, double t);
+        SignalResults SimulateDiffusionSteps(int NrOfSteps);
 
         /**
          * @brief Computes the static signal (without diffusion).
@@ -143,6 +136,10 @@ class Voxel {
         std::complex<double> ComputeSignalStatic(double t);
 
         std::vector<double> ComputeTemporalACF(int tsteps);
+
+        std::complex<double> SimulateSpinEchoSignal(int diffusionSteps, double dt, double TE);
+
+        std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> ComputeSpatialCorrelations();
 };
 
 /**

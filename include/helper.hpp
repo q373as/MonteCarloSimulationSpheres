@@ -34,8 +34,10 @@ struct SimulationConfig {
     double tc;
     double R2p;
     double R2;
-
+    double ratio;
 };
+
+
 
 SimulationConfig loadConfig(const std::string& filename);
     
@@ -43,7 +45,7 @@ std::vector<std::vector<std::vector<std::complex<double>>>> applyFFT3D(const std
 
 std::vector<std::vector<std::vector<double>>> applyIFFT3D(const std::vector<std::vector<std::vector<std::complex<double>>>>& kSpace, int n, double B0_val); 
 
-void shift3DArray(std::vector<std::vector<std::vector<double>>>& array, int n);
+void shift3DArray(std::vector<std::vector<std::vector<std::complex<double>>>>& array, int n);
 
 bool isElement(const std::set<std::vector<int>>& s, const std::vector<double>& v);
 
@@ -55,25 +57,29 @@ double f(double delta_omega, double t);
 
 void saveConfigToJson(const SimulationConfig& cfg, const std::string& filename);
 
+void SaveMapsToNETCDF(const std::string& filename,
+                         const std::vector<std::vector<std::vector<double>>>& ChiMap,
+                         const std::vector<std::vector<std::vector<double>>>& BzMap,
+                         double L);
+
 void SaveAllToNetCDF(
     const std::vector<double>& times,
-    const std::vector<double>& magnitudes,
     const std::vector<double>& signal,
+    const std::vector<double>& staticmag,
     const std::vector<double>& star,
     const std::vector<double>& Hyper,
     const std::vector<double>& correlation,
-    const std::vector<double>& interPhase,
-    const std::vector<double>& statPhase,
-    const std::vector<double>& kappa2Mag,
-    const std::vector<double>& kappa2Phase,
-    const std::vector<double>& kappa4Mag,
-    const std::vector<double>& kappa4Phase,
     const std::vector<std::vector<double>>& allMoments,
     const std::vector<std::vector<double>>& allCumulants,
+    const std::vector<double>& k2,
+    const std::vector<double>& k4,
+    const std::vector<double>& SEsignal,
+    const std::vector<double>& Cr_pp,      
+    const std::vector<double>& Cr_nn,       
+    const std::vector<double>& Cr_pn, 
     const std::string& filename,
-    const std::vector<std::vector<std::vector<double>>>& Bz,
-    const std::vector<std::vector<std::vector<double>>>& ChiMap,
-    const std::vector<std::vector<std::vector<double>>>& diffusionPaths
+    const std::vector<Proton>& protons
 );
+
 
 #endif

@@ -31,7 +31,8 @@ SimulationConfig loadConfig(const std::string& filename) {
     config.index = config_json.value("index", 0);
     config.DiffSteps = config_json.value("DiffSteps", 10.0);
     config.tsteps = config_json.value("tsteps", 1000);
-    config.R2 = config_json.value("R2", 10);
+    config.R2 = config_json.value("R2", 20);
+    config.ratio = config_json.value("ratio", 1.0);
     return config;
 }
 
@@ -91,8 +92,6 @@ std::vector<std::vector<std::vector<std::complex<double>>>> applyFFT3D(const std
 
             }
 
-    
- 
     fftw_plan plan = fftw_plan_dft_3d(n, n, n, in, out, FFTW_FORWARD, FFTW_MEASURE);
 
     fftw_execute(plan);
@@ -110,28 +109,23 @@ std::vector<std::vector<std::vector<std::complex<double>>>> applyFFT3D(const std
     return kSpace;
 }
 
-void shift3DArray(std::vector<std::vector<std::vector<double>>>& array, int n) {
-    std::vector<std::vector<std::vector<double>>> shiftedArray(n,
-        std::vector<std::vector<double>>(n,
-        std::vector<double>(n)));
+void shift3DArray(std::vector<std::vector<std::vector<std::complex<double>>>>& array, int n) {
+    std::vector<std::vector<std::vector<std::complex<double>>>> shiftedArray(
+        n, std::vector<std::vector<std::complex<double>>>(
+            n, std::vector<std::complex<double>>(n)));
 
-    // Verschiebe das Array um n/2 in jeder Dimension (periodisch)
     for (int i = 0; i < n; ++i) {
         for (int j = 0; j < n; ++j) {
             for (int k = 0; k < n; ++k) {
-                // Berechne die neuen Indizes mit modulo n (periodische Verschiebung)
                 int new_i = (i + n / 2) % n;
                 int new_j = (j + n / 2) % n;
                 int new_k = (k + n / 2) % n;
 
-                // Verschiebe den Wert in das neue Array
                 shiftedArray[new_i][new_j][new_k] = array[i][j][k];
             }
         }
     }
-
-    // Setze das verschobene Array zurück ins Originalarray
-    array = shiftedArray;
+    array.swap(shiftedArray);
 }
 
 bool isElement(const std::set<std::vector<int>>& s, const std::vector<double>& v) {
@@ -187,7 +181,9 @@ void saveConfigToJson(const SimulationConfig& cfg, const std::string& filename) 
     j["eta"] = cfg.eta;
     j["Xtot"] = cfg.Xtot;
     j["tc"] = cfg.tc;
+    j["R2"] = cfg.R2;
     j["R2p"] = cfg.R2p;
+    j["ratio"] = cfg.ratio;
 
     std::ofstream file(filename);
     file << j.dump(2);  // pretty print with indent=2
@@ -195,145 +191,193 @@ void saveConfigToJson(const SimulationConfig& cfg, const std::string& filename) 
 
 void SaveAllToNetCDF(
     const std::vector<double>& times,
-    const std::vector<double>& magnitudes,
     const std::vector<double>& signal,
+    const std::vector<double>& staticmag,
     const std::vector<double>& star,
     const std::vector<double>& Hyper,
     const std::vector<double>& correlation,
-    const std::vector<double>& interPhase,
-    const std::vector<double>& statPhase,
-    const std::vector<double>& kappa2Mag,
-    const std::vector<double>& kappa2Phase,
-    const std::vector<double>& kappa4Mag,
-    const std::vector<double>& kappa4Phase,
     const std::vector<std::vector<double>>& allMoments,
     const std::vector<std::vector<double>>& allCumulants,
+    const std::vector<double>& k2,
+    const std::vector<double>& k4,
+    const std::vector<double>& SEsignal,
+    const std::vector<double>& Cr_pp,       // <--- NEU
+    const std::vector<double>& Cr_nn,       // <--- NEU
+    const std::vector<double>& Cr_pn,       // <--- NEU
     const std::string& filename,
-    const std::vector<std::vector<std::vector<double>>>& Bz,
-    const std::vector<std::vector<std::vector<double>>>& ChiMap,
-    const std::vector<std::vector<std::vector<double>>>& diffusionPaths
-) {
+    const std::vector<Proton>& protons)
+{
     try {
         NcFile dataFile(filename, NcFile::replace);
 
-        // Dimensionen definieren
-        auto tsteps = times.size();
-        auto moments_size = 4;
-        auto nProtons = diffusionPaths.size();
+        // Dimensionen
+        auto dim_time = dataFile.addDim("time", times.size());
+        auto dim_protons = dataFile.addDim("protons", protons.size());
+        auto dim_moment_order = dataFile.addDim("moment_order", 4);
 
-        // Zeit-Dimension
-        NcDim timeDim = dataFile.addDim("time", tsteps);
+        // Hier neue Dimension für r-Bins
+        auto dim_r = dataFile.addDim("r", Cr_pp.size());
 
-        // Moments und Cumulants Dimension
-        NcDim momentsDim = dataFile.addDim("moments", moments_size);
+        // Zeiten
+        auto var_times = dataFile.addVar("time", ncDouble, dim_time);
+        var_times.putVar(times.data());
 
-        // Diffusionspfade Dimensionen: protonen, steps, coords (3)
-        size_t maxSteps = 0;
-        for (const auto& path : diffusionPaths)
-            if (path.size() > maxSteps)
-                maxSteps = path.size();
+        // Andere 1D-Variablen
+        auto var_signal = dataFile.addVar("Diffusion", ncDouble, dim_time);
+        var_signal.putVar(signal.data());
+        
+        auto var_static = dataFile.addVar("StaticDephasing", ncDouble, dim_time);
+        var_static.putVar(staticmag.data());
 
-        NcDim protonDim = dataFile.addDim("protons", nProtons);
-        NcDim stepDim = dataFile.addDim("steps", maxSteps);
-        NcDim coordDim = dataFile.addDim("coord", 3);
+        auto var_star = dataFile.addVar("Analytic", ncDouble, dim_time);
+        var_star.putVar(star.data());
 
-        // Variablen anlegen
-        auto timeVar = dataFile.addVar("time", ncDouble, timeDim);
-        auto magnVar = dataFile.addVar("magnitude_static", ncDouble, timeDim);
-        auto signalVar = dataFile.addVar("signal_diffusion", ncDouble, timeDim);
-        auto starVar = dataFile.addVar("analytic_star", ncDouble, timeDim);
-        auto hyperVar = dataFile.addVar("analytic_hyper", ncDouble, timeDim);
-        auto corrVar = dataFile.addVar("correlation", ncDouble, timeDim);
-        auto interPhaseVar = dataFile.addVar("interPhase", ncDouble, timeDim);
-        auto statPhaseVar = dataFile.addVar("statPhase", ncDouble, timeDim);
+        auto var_hyper = dataFile.addVar("Hyper", ncDouble, dim_time);
+        var_hyper.putVar(Hyper.data());
 
-        auto k2MagVar = dataFile.addVar("kappa2_magnitude", ncDouble, timeDim);
-        auto k2PhaseVar = dataFile.addVar("kappa2_phase", ncDouble, timeDim);
-        auto k4MagVar = dataFile.addVar("kappa4_magnitude", ncDouble, timeDim);
-        auto k4PhaseVar = dataFile.addVar("kappa4_phase", ncDouble, timeDim);
+        auto var_correlation = dataFile.addVar("correlation", ncDouble, dim_time);
+        var_correlation.putVar(correlation.data());
 
-        // Moments und Cumulants (2D: time x moments)
-        std::vector<NcDim> dims2D = {timeDim, momentsDim};
-        auto momentsVar = dataFile.addVar("moments", ncDouble, dims2D);
-        auto cumulantsVar = dataFile.addVar("cumulants", ncDouble, dims2D);
+        auto var_SEsignal = dataFile.addVar("SEsignal", ncDouble, dim_time);
+        var_SEsignal.putVar(SEsignal.data());
 
-        // 3D Voxel-Felder: Bz, ChiMap
-        size_t Nx = Bz.size();
-        size_t Ny = (Nx > 0) ? Bz[0].size() : 0;
-        size_t Nz = (Ny > 0) ? Bz[0][0].size() : 0;
+        // Momente
+        auto var_moments = dataFile.addVar("moments", ncDouble, {dim_time, dim_moment_order});
+        std::vector<double> moments_flat;
+        moments_flat.reserve(times.size() * 4);
+        for (const auto& m : allMoments)
+            moments_flat.insert(moments_flat.end(), m.begin(), m.end());
+        var_moments.putVar(moments_flat.data());
 
-        NcDim xDim = dataFile.addDim("x", Nx);
-        NcDim yDim = dataFile.addDim("y", Ny);
-        NcDim zDim = dataFile.addDim("z", Nz);
+        // Kumulanten
+        auto var_cumulants = dataFile.addVar("cumulants", ncDouble, {dim_time, dim_moment_order});
+        std::vector<double> cumulants_flat;
+        cumulants_flat.reserve(times.size() * 4);
+        for (const auto& k : allCumulants)
+            cumulants_flat.insert(cumulants_flat.end(), k.begin(), k.end());
+        var_cumulants.putVar(cumulants_flat.data());
 
-        auto BzVar = dataFile.addVar("Bz", ncDouble, {xDim, yDim, zDim});
-        auto ChiVar = dataFile.addVar("ChiMap", ncDouble, {xDim, yDim, zDim});
+        // k2 (kappa2) hinzufügen
+        auto var_k2 = dataFile.addVar("kappa2", ncDouble, dim_time);
+        var_k2.putVar(k2.data());
 
-        // Diffusionspfade: protons x steps x 3 coords
-        auto diffusionVar = dataFile.addVar("diffusionPaths", ncDouble, {protonDim, stepDim, coordDim});
+        // k4 (kappa4) hinzufügen
+        auto var_k4 = dataFile.addVar("kappa4", ncDouble, dim_time);
+        var_k4.putVar(k4.data());
 
-        // Daten schreiben
+        // === NEU: Korrelationsfunktionen ===
+        auto var_Cpp = dataFile.addVar("Correlation_pp", ncDouble, dim_r);
+        var_Cpp.putVar(Cr_pp.data());
 
-        timeVar.putVar(times.data());
-        magnVar.putVar(magnitudes.data());
-        signalVar.putVar(signal.data());
-        starVar.putVar(star.data());
-        hyperVar.putVar(Hyper.data());
-        corrVar.putVar(correlation.data());
-        interPhaseVar.putVar(interPhase.data());
-        statPhaseVar.putVar(statPhase.data());
+        auto var_Cnn = dataFile.addVar("Correlation_nn", ncDouble, dim_r);
+        var_Cnn.putVar(Cr_nn.data());
 
-        k2MagVar.putVar(kappa2Mag.data());
-        k2PhaseVar.putVar(kappa2Phase.data());
-        k4MagVar.putVar(kappa4Mag.data());
-        k4PhaseVar.putVar(kappa4Phase.data());
+        auto var_Cpn = dataFile.addVar("Correlation_pn", ncDouble, dim_r);
+        var_Cpn.putVar(Cr_pn.data());
 
-        // Momente & Kumulanten müssen als flaches Array geschrieben werden
-        std::vector<double> momentsFlat(tsteps * moments_size);
-        std::vector<double> cumulantsFlat(tsteps * moments_size);
+        
+        /*
+        // Protonenpositionen und Phasen
+        size_t max_steps = 0;
+        for (const auto& p : protons)
+            if (p.TrackPostitions_.size() > max_steps)
+                max_steps = p.TrackPostitions_.size();
 
-        for (size_t i = 0; i < tsteps; ++i) {
-            for (size_t j = 0; j < moments_size; ++j) {
-                momentsFlat[i * moments_size + j] = allMoments[i][j];
-                cumulantsFlat[i * moments_size + j] = allCumulants[i][j];
+        auto dim_steps = dataFile.addDim("steps", max_steps);
+        auto dim_xyz = dataFile.addDim("xyz", 3);
+
+        auto var_positions = dataFile.addVar("proton_positions", ncDouble, {dim_protons, dim_steps, dim_xyz});
+        auto var_phases_real = dataFile.addVar("proton_phases_real", ncDouble, {dim_protons, dim_steps});
+        auto var_phases_imag = dataFile.addVar("proton_phases_imag", ncDouble, {dim_protons, dim_steps});
+
+        std::vector<double> positions_data(protons.size() * max_steps * 3, 0.0);
+        std::vector<double> phases_real(protons.size() * max_steps, 0.0);
+        std::vector<double> phases_imag(protons.size() * max_steps, 0.0);
+
+        for (size_t i = 0; i < protons.size(); ++i) {
+            const auto& p = protons[i];
+            for (size_t step = 0; step < p.TrackPostitions_.size(); ++step) {
+                size_t idx_pos = i * max_steps * 3 + step * 3;
+                positions_data[idx_pos] = p.TrackPostitions_[step][0];
+                positions_data[idx_pos + 1] = p.TrackPostitions_[step][1];
+                positions_data[idx_pos + 2] = p.TrackPostitions_[step][2];
+
+                size_t idx_phase = i * max_steps + step;
+                phases_real[idx_phase] = p.TrackPhases_[step].real();
+                phases_imag[idx_phase] = p.TrackPhases_[step].imag();
             }
         }
 
-        momentsVar.putVar(momentsFlat.data());
-        cumulantsVar.putVar(cumulantsFlat.data());
-
-        // Bz und ChiMap (3D Felder)
-        std::vector<double> BzFlat;
-        BzFlat.reserve(Nx * Ny * Nz);
-        for (size_t i = 0; i < Nx; ++i)
-            for (size_t j = 0; j < Ny; ++j)
-                for (size_t k = 0; k < Nz; ++k)
-                    BzFlat.push_back(Bz[i][j][k]);
-        BzVar.putVar(BzFlat.data());
-
-        std::vector<double> ChiFlat;
-        ChiFlat.reserve(Nx * Ny * Nz);
-        for (size_t i = 0; i < Nx; ++i)
-            for (size_t j = 0; j < Ny; ++j)
-                for (size_t k = 0; k < Nz; ++k)
-                    ChiFlat.push_back(ChiMap[i][j][k]);
-        ChiVar.putVar(ChiFlat.data());
-
-        // Diffusionspfade (protons x steps x 3)
-        // Nullwerte bei kürzeren Pfaden auffüllen mit NaN oder 0 (hier 0)
-        std::vector<double> diffusionFlat(nProtons * maxSteps * 3, 0.0);
-        for (size_t p = 0; p < nProtons; ++p) {
-            for (size_t s = 0; s < diffusionPaths[p].size(); ++s) {
-                diffusionFlat[(p * maxSteps + s) * 3 + 0] = diffusionPaths[p][s][0];
-                diffusionFlat[(p * maxSteps + s) * 3 + 1] = diffusionPaths[p][s][1];
-                diffusionFlat[(p * maxSteps + s) * 3 + 2] = diffusionPaths[p][s][2];
-            }
-        }
-        diffusionVar.putVar(diffusionFlat.data());
-
-        std::cout << "Daten erfolgreich in NetCDF Datei gespeichert: " << filename << std::endl;
+        var_positions.putVar(positions_data.data());
+        var_phases_real.putVar(phases_real.data());
+        var_phases_imag.putVar(phases_imag.data());
+        */
+       
+        dataFile.close();
 
     } catch (NcException& e) {
-        std::cerr << "Fehler beim Schreiben der NetCDF Datei: " << e.what() << std::endl;
+        std::cerr << "NetCDF Fehler: " << e.what() << std::endl;
+    }
+}
+
+void SaveMapsToNETCDF(const std::string& filename,
+                         const std::vector<std::vector<std::vector<double>>>& ChiMap,
+                         const std::vector<std::vector<std::vector<double>>>& BzMap,
+                         double L) {
+   
+
+    const size_t n = ChiMap.size();
+    if (n == 0) {
+        throw std::runtime_error("Empty maps provided.");
+    }
+
+    // Flatten 3D arrays into contiguous 1D buffers in row-major order: [i][j][k]
+    std::vector<double> chi_flat;
+    std::vector<double> bz_flat;
+    chi_flat.reserve(n * n * n);
+    bz_flat.reserve(n * n * n);
+
+    for (size_t i = 0; i < n; ++i) {
+        for (size_t j = 0; j < n; ++j) {
+            for (size_t k = 0; k < n; ++k) {
+                chi_flat.push_back(ChiMap[i][j][k]);
+                bz_flat.push_back(BzMap[i][j][k]);
+            }
+        }
+    }
+
+    try {
+        // Create NetCDF file (overwrite if exists)
+        NcFile dataFile(filename, NcFile::replace, NcFile::nc4);
+
+        // Define dimensions
+        auto dim_x = dataFile.addDim("x", n);
+        auto dim_y = dataFile.addDim("y", n);
+        auto dim_z = dataFile.addDim("z", n);
+
+        std::vector<NcDim> dims = { dim_x, dim_y, dim_z };
+
+        // Define variables with compression
+        NcVar chiVar = dataFile.addVar("ChiMap", ncDouble, dims);
+        NcVar bzVar = dataFile.addVar("Bz", ncDouble, dims);
+
+        // Enable chunking and compression (optional but recommended for large 3D data)
+        chiVar.setCompression(true, true, 4); // shuffle, deflate, level=4
+        bzVar.setCompression(true, true, 4);
+
+
+        // Write data: NetCDF expects the data in the same order as dimensions (x,y,z)
+        // Our flattening was [i][j][k] matching (x,y,z)
+        std::vector<size_t> start = {0, 0, 0};
+        std::vector<size_t> count = {n, n, n};
+
+        chiVar.putVar(start, count, chi_flat.data());
+        bzVar.putVar(start, count, bz_flat.data());
+
+
+        dataFile.close();
+
+    } catch (const NcException& e) {
+        throw std::runtime_error(std::string("NetCDF error: ") + e.what());
     }
 }
