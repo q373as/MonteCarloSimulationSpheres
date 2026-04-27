@@ -77,13 +77,13 @@ The simulation is controlled via a JSON configuration file:
 
 ### Magnetic Field
 
-* **B0**: External magnetic field vector (Tesla)
+* **\mathbf{B}_0 (B0)**: External magnetic field vector (Tesla)
 
 ---
 
 ### Diffusion
 
-* **D**: Diffusion coefficient (m²/s)
+* **$D$ (D)**: Diffusion coefficient (m²/s)
 * **dt**: Time step
 * **tsteps**: Number of time steps
 * **DiffSteps**: Number of substeps between stored positions (sub-diffusion steps)
@@ -107,14 +107,14 @@ The domain size ( L ) is internally adjusted such that the mean sphere radius co
 
 ### Microstructure
 
-* **eta (ξ^S)**: Volume fraction occupied by spheres
-* **mu, sigma**: Parameters of the log-normal distribution of sphere radii
+* **$\xi^S$ (eta)**: Volume fraction occupied by spheres
+* **$\mu$, $\sigma$ (mu, sigma)**: Parameters of the log-normal distribution of sphere radii
 
 The sphere radii follow a log-normal distribution:
 
-[
-p(R) = \frac{1}{R , \sigma \sqrt{2\pi}} \exp\left( -\frac{(\ln R - \mu)^2}{2\sigma^2} \right)
-]
+
+$$p(R) = \frac{1}{R , \sigma \sqrt{2\pi}} \exp\left( -\frac{(\ln R - \mu)^2}{2\sigma^2} \right)$$
+
 
 where:
 
