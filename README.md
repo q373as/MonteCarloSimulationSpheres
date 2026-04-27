@@ -174,7 +174,7 @@ Signal decay assuming static spins in the susceptibility-induced field.
 **Diffusion**
 
 $$
-S(t) = \left\langle e^{i , \varphi[\mathbf{r}(t)] , t} \right\rangle
+S(t) = \left\langle e^{i  \varphi[\mathbf{r}(t)] t} \right\rangle
 $$
 
 Signal decay including diffusion, computed from Monte Carlo trajectories.
@@ -184,7 +184,7 @@ Signal decay including diffusion, computed from Monte Carlo trajectories.
 **Second-order cumulant ($\kappa_2$)**
 
 $$
-S(t) = \left\langle e^{- \kappa_2 , t} \right\rangle
+S(t) =  e^{- \kappa_2 t} 
 $$
 
 Approximation using only the second cumulant of the phase distribution.
@@ -194,7 +194,7 @@ Approximation using only the second cumulant of the phase distribution.
 **Fourth-order cumulant ($\kappa_2, \kappa_4$)**
 
 $$
-S(t) = \left\langle e^{- \kappa_2 , t + \kappa_4 , t^3} \right\rangle
+S(t) =  e^{- \kappa_2  t + \kappa_4 t^3} 
 $$
 
 Extension including the fourth cumulant of the phase distribution.
