@@ -159,9 +159,9 @@ The following signal representations are included:
 
 **Analytical**
 
-[
+\[
 S(t) = \exp\left( - (R_2 + R_2'), t \right)
-]
+\]
 
 ---
 
