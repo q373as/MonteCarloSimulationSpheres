@@ -227,7 +227,7 @@ Both files allow efficient post-processing and reproducible analysis of large-sc
 ## Usage
 
 ```bash
-./simulation config.json
+./simulation
 ```
 
 ---
