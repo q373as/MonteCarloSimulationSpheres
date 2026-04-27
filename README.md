@@ -1,4 +1,4 @@
-# Monte Carlo Simulation of Spheres
+# Monte Carlo Simulation of magnetized Spheres
 
 This repository contains a Monte Carlo simulation framework for studying diffusion and transverse relaxation in heterogeneous media composed of spherical inclusions with susceptibility contrast.
 
