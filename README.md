@@ -201,6 +201,16 @@ Extension including the fourth cumulant of the phase distribution.
 
 ---
 
+**SpinEcho**
+
+$$
+S_{\mathrm{SpinEcho}}(t) = \left\langle \exp \left( i \left[ \int_0^{t/2} \Delta \omega(\mathbf{r}(t')) dt' - \int_{t/2}^{t} \Delta \omega(\mathbf{r}(t')) dt' \right] \right) \right\rangle
+$$
+
+Monte Carlo simulation of the spin-echo signal, including refocusing at $t = \mathrm{TE}/2$.
+
+---
+
 ### Maps.nc
 
 Contains:
