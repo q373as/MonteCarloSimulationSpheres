@@ -77,13 +77,13 @@ The simulation is controlled via a JSON configuration file:
 
 ### Magnetic Field
 
-* **(\mathbf{B}_0) (B0)**: External magnetic field vector (Tesla)
+* **$\mathbf{B}_0$ (B0)**: External magnetic field vector (Tesla)
 
 ---
 
 ### Diffusion
 
-* **(D)**: Diffusion coefficient (m²/s)
+* **$D$**: Diffusion coefficient (m²/s)
 * **dt**: Time step
 * **tsteps**: Number of time steps
 * **DiffSteps**: Number of substeps between stored positions (sub-diffusion steps)
@@ -92,10 +92,10 @@ The simulation is controlled via a JSON configuration file:
 
 ### Simulation Domain
 
-* **n**: Grid size (n × n × n)
-* **L**: Physical domain size
+* **n**: Grid size ($n \times n \times n$)
+* **$L$**: Physical domain size
 
-The domain size (L) is internally adjusted such that the mean sphere radius corresponds to at least approximately 10 voxels, ensuring sufficient spatial resolution.
+The domain size $L$ is internally adjusted such that the mean sphere radius corresponds to at least approximately 10 voxels, ensuring sufficient spatial resolution.
 
 ---
 
@@ -107,31 +107,31 @@ The domain size (L) is internally adjusted such that the mean sphere radius corr
 
 ### Microstructure
 
-* **(\xi^S) (eta)**: Volume fraction occupied by spheres
-* **(\mu, \sigma)**: Parameters of the log-normal distribution of sphere radii
+* **$\xi^S$ (eta)**: Volume fraction occupied by spheres
+* **$\mu, \sigma$ (mu, sigma)**: Parameters of the log-normal distribution of sphere radii
 
 The sphere radii follow a log-normal distribution:
 
-[
+$$
 p(R) = \frac{1}{R , \sigma \sqrt{2\pi}} \exp\left( -\frac{(\ln R - \mu)^2}{2\sigma^2} \right)
-]
+$$
 
 where:
 
-* (\mu) is the mean of the logarithmic radius
-* (\sigma) is the standard deviation of the logarithmic radius
+* $\mu$ is the mean of the logarithmic radius
+* $\sigma$ is the standard deviation of the logarithmic radius
 
 ---
 
 ### Susceptibility
 
-* **(\bar{\chi}) (Xtot)**: Bulk susceptibility of the spherical inclusions
+* **$\bar{\chi}$ (Xtot)**: Bulk susceptibility of the spherical inclusions
 
 ---
 
 ### Relaxation
 
-* **(R_{2,\text{nano}}) (R2)**: Molecular (intrinsic) transverse relaxation rate
+* **$R_{2,\mathrm{nano}}$ (R2)**: Molecular (intrinsic) transverse relaxation rate
 
 ---
 
@@ -159,9 +159,9 @@ The following signal representations are included:
 
 **Analytical**
 
-\[
+$$
 S(t) = \exp\left( - (R_2 + R_2'), t \right)
-\]
+$$
 
 ---
 
@@ -173,29 +173,29 @@ Signal decay assuming static spins in the susceptibility-induced field.
 
 **Diffusion**
 
-[
+$$
 S(t) = \left\langle e^{i , \varphi[\mathbf{r}(t)] , t} \right\rangle
-]
+$$
 
 Signal decay including diffusion, computed from Monte Carlo trajectories.
 
 ---
 
-**Second-order cumulant ((\kappa_2))**
+**Second-order cumulant ($\kappa_2$)**
 
-[
+$$
 S(t) = \left\langle e^{- \kappa_2 , t} \right\rangle
-]
+$$
 
 Approximation using only the second cumulant of the phase distribution.
 
 ---
 
-**Fourth-order cumulant ((\kappa_2, \kappa_4))**
+**Fourth-order cumulant ($\kappa_2, \kappa_4$)**
 
-[
+$$
 S(t) = \left\langle e^{- \kappa_2 , t + \kappa_4 , t^3} \right\rangle
-]
+$$
 
 Extension including the fourth cumulant of the phase distribution.
 
