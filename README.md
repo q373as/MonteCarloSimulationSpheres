@@ -14,7 +14,7 @@ The framework simulates:
 * Local magnetic field perturbations caused by susceptibility differences
 * Transverse relaxation emerging from diffusion in inhomogeneous fields
 
-The core implementation is written in C++ for computational efficiency, with additional scripts for execution and analysis.
+The core implementation is written in C++ for computational efficiency.
 
 ---
 
