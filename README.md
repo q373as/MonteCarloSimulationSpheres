@@ -184,7 +184,7 @@ Signal decay including diffusion, computed from Monte Carlo trajectories.
 **Second-order cumulant ($\kappa_2$)**
 
 $$
-S(t) =  e^{- \kappa_2 t} 
+S(t) =  e^{-\frac{1}{2} \kappa_2(t)} 
 $$
 
 Approximation using only the second cumulant of the phase distribution.
@@ -194,7 +194,7 @@ Approximation using only the second cumulant of the phase distribution.
 **Fourth-order cumulant ($\kappa_2, \kappa_4$)**
 
 $$
-S(t) =  e^{- \kappa_2  t + \kappa_4 t^3} 
+S(t) =  e^{- \frac{1}{2}\kappa_2(t) + \frac{1}{24}\kappa_4(t)} 
 $$
 
 Extension including the fourth cumulant of the phase distribution.
