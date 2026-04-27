@@ -178,8 +178,8 @@ S_{\mathrm{Diffusion}}(t) = \left\langle \exp \left( i \int_0^{t} \Delta \omega(
 $$
 
 Monte Carlo simulation of the gradient echo (free induction decay, FID) signal including diffusion, without refocusing.
----
 
+---
 **Second-order cumulant ($\kappa_2$)**
 
 $$
