@@ -174,7 +174,7 @@ Both files allow efficient post-processing and reproducible analysis of large-sc
 Run the simulation with:
 
 ```bash
-./simulation config.json
+./simulation 
 ```
 
 ---
@@ -185,6 +185,3 @@ The simulation captures microstructural effects arising from the interaction of 
 
 ---
 
-## License
-
-MIT License
