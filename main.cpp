@@ -72,7 +72,6 @@ int main() {
     auto correlation = voxel.ComputeTemporalACF(cfg.tsteps);
 
     
-    /*
     std::cout << "Start Simulation of SE..." << std::endl;
     for (int t = 0; t < cfg.tsteps; ++t) {
         double current_time = t * cfg.dt;
@@ -85,7 +84,7 @@ int main() {
 
         std::cout << "SE Time: " << current_time << " SE Signal Magnitude: " << seMag << std::endl;
     }
-    */
+    
 
     saveConfigToJson(cfg, "output/config" + std::to_string(cfg.index) + ".json");
     std::string filename = "output/simulation_" + std::to_string(cfg.index) + ".nc";
