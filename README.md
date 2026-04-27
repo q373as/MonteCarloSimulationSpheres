@@ -77,7 +77,7 @@ The simulation is controlled via a JSON configuration file:
 
 ### Magnetic Field
 
-* **\mathbf{B}_0 (B0)**: External magnetic field vector (Tesla)
+* **$\mathbf{B}_0$ (B0)**: External magnetic field vector (Tesla)
 
 ---
 
@@ -113,13 +113,13 @@ The domain size ( L ) is internally adjusted such that the mean sphere radius co
 The sphere radii follow a log-normal distribution:
 
 
-$$p(R) = \frac{1}{R , \sigma \sqrt{2\pi}} \exp\left( -\frac{(\ln R - \mu)^2}{2\sigma^2} \right)$$
+$$p(R) = \frac{1}{\sigma \sqrt{2\pi}} \exp\left( -\frac{(\ln R - \mu)^2}{2\sigma^2} \right)$$
 
 
 where:
 
-* ( \mu ) is the mean of the logarithmic radius
-* ( \sigma ) is the standard deviation of the logarithmic radius
+* ( $\mu$ ) is the mean of the logarithmic radius
+* ( $\sigma$ ) is the standard deviation of the logarithmic radius
 
 ---
 
