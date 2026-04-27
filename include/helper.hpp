@@ -74,9 +74,6 @@ void SaveAllToNetCDF(
     const std::vector<double>& k2,
     const std::vector<double>& k4,
     const std::vector<double>& SEsignal,
-    const std::vector<double>& Cr_pp,      
-    const std::vector<double>& Cr_nn,       
-    const std::vector<double>& Cr_pn, 
     const std::string& filename,
     const std::vector<Proton>& protons
 );

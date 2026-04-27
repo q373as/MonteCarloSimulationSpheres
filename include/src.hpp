@@ -139,9 +139,7 @@ class Voxel {
 
         std::complex<double> SimulateSpinEchoSignal(int diffusionSteps, double dt, double TE);
 
-        std::tuple<std::vector<double>, std::vector<double>, std::vector<double>> ComputeSpatialCorrelations();
 };
-
 /**
  * @brief Returns all occupied voxel positions from a list of artifacts.
  * @param artifacts Vector of Artifact objects

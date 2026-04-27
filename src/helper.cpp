@@ -201,9 +201,6 @@ void SaveAllToNetCDF(
     const std::vector<double>& k2,
     const std::vector<double>& k4,
     const std::vector<double>& SEsignal,
-    const std::vector<double>& Cr_pp,       // <--- NEU
-    const std::vector<double>& Cr_nn,       // <--- NEU
-    const std::vector<double>& Cr_pn,       // <--- NEU
     const std::string& filename,
     const std::vector<Proton>& protons)
 {
@@ -214,9 +211,6 @@ void SaveAllToNetCDF(
         auto dim_time = dataFile.addDim("time", times.size());
         auto dim_protons = dataFile.addDim("protons", protons.size());
         auto dim_moment_order = dataFile.addDim("moment_order", 4);
-
-        // Hier neue Dimension für r-Bins
-        auto dim_r = dataFile.addDim("r", Cr_pp.size());
 
         // Zeiten
         auto var_times = dataFile.addVar("time", ncDouble, dim_time);
@@ -265,18 +259,8 @@ void SaveAllToNetCDF(
         auto var_k4 = dataFile.addVar("kappa4", ncDouble, dim_time);
         var_k4.putVar(k4.data());
 
-        // === NEU: Korrelationsfunktionen ===
-        auto var_Cpp = dataFile.addVar("Correlation_pp", ncDouble, dim_r);
-        var_Cpp.putVar(Cr_pp.data());
-
-        auto var_Cnn = dataFile.addVar("Correlation_nn", ncDouble, dim_r);
-        var_Cnn.putVar(Cr_nn.data());
-
-        auto var_Cpn = dataFile.addVar("Correlation_pn", ncDouble, dim_r);
-        var_Cpn.putVar(Cr_pn.data());
-
         
-        /*
+        
         // Protonenpositionen und Phasen
         size_t max_steps = 0;
         for (const auto& p : protons)
@@ -311,7 +295,7 @@ void SaveAllToNetCDF(
         var_positions.putVar(positions_data.data());
         var_phases_real.putVar(phases_real.data());
         var_phases_imag.putVar(phases_imag.data());
-        */
+        
        
         dataFile.close();
 

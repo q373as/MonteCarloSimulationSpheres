@@ -116,39 +116,16 @@ Voxel::Voxel(int n, double L, double Xtot, double eta, int numberofprotons,
         throw std::runtime_error("Keine besetzten Positionen gefunden, Suszeptibilitätsverteilung fehlgeschlagen.");
     }
 
-   // Anteil positiver Quellen (zwischen 0 und 1, aber != 0.5)
-    double etaP = ratio * eta_;
-    double etaN = (1.0 - ratio) * eta_;
-
-    // DeltaChi so wählen, dass Bulk = Xtot
-    double denom = eta_ * (2.0 * ratio - 1.0);
-
-    if (std::abs(denom) < 1e-12) {
-        throw std::runtime_error("Ungültiges ratio=0.5 für gegebenes Xtot!");
-    }
-
-
-    // Gesamtzahl aller Positionen bestimmen
-    size_t total_positions = Occupied_positions_.size();
-
-        
-    double DeltaChi = Xtot_ / denom;
-    double chiP =  DeltaChi;
-    double chiN = -DeltaChi;
-
-    // Grenze für positive Quellen
-    size_t nArtifacts = artifacts.size();
-    size_t nPosArtifacts = static_cast<size_t>(ratio * nArtifacts);
+    double DeltaChi = Xtot_ / eta_;  // Alle Artefakte gleich
+    double chi = DeltaChi;           // kein Wechsel mehr
 
     size_t count = 0;
     for (const auto& artifact : artifacts) {
-        // Entscheide, ob das ganze Artefakt positiv oder negativ ist
-        double chi = (count < nPosArtifacts) ? chiP : chiN;
-
         for (const auto& p : artifact.positions_) {
             int x = p[0] + n_ / 2;
             int y = p[1] + n_ / 2;
             int z = p[2] + n_ / 2;
+
             if (x < 0 || x >= n_ || y < 0 || y >= n_ || z < 0 || z >= n_) continue;
 
             // Nur setzen, wenn der Voxel noch leer ist
@@ -158,6 +135,10 @@ Voxel::Voxel(int n, double L, double Xtot, double eta, int numberofprotons,
         }
         count++;
     }
+
+    std::cout << "Alle Artefakte gesetzt mit chi = " << DeltaChi 
+            << " (Xtot = " << Xtot_ << ", eta = " << eta_ << ")" 
+            << std::endl;
 
 
 
@@ -227,61 +208,6 @@ Voxel::Voxel(int n, double L, double Xtot, double eta, int numberofprotons,
 
 
     std::cout << "\nVoxel Initialization Done...\n" << std::endl;
-}
-
-std::tuple<
-    std::vector<std::vector<std::vector<double>>>, 
-    std::vector<std::vector<std::vector<double>>>, 
-    std::vector<std::vector<std::vector<double>>>>
-Voxel::ComputeSpatialCorrelations3D() 
-{
-    std::cout << "Compute full 3D spatial correlation functions..." << std::endl;
-
-    // Extra Maps für positive und negative Quellen
-    auto ChiMapPos = ChiMap_;
-    auto ChiMapNeg = ChiMap_;
-    for (int i = 0; i < n_; i++) {
-        for (int j = 0; j < n_; j++) {
-            for (int k = 0; k < n_; k++) {
-                if (ChiMap_[i][j][k] > 0.0) {
-                    ChiMapNeg[i][j][k] = 0.0;
-                } else {
-                    ChiMapPos[i][j][k] = 0.0;
-                }
-            }
-        }
-    }
-
-    // FFT von Chi+ und Chi-
-    auto Fpos = applyFFT3D(ChiMapPos, n_);
-    auto Fneg = applyFFT3D(ChiMapNeg, n_);
-
-    // Container für Correlation Spectra
-    auto Cpp_k = Fpos;
-    auto Cnn_k = Fneg;
-    auto Cpn_k = Fpos;
-
-    for (int i = 0; i < n_; i++) {
-        for (int j = 0; j < n_; j++) {
-            for (int k = 0; k < n_; k++) {
-                std::complex<double> a = Fpos[i][j][k];
-                std::complex<double> b = Fneg[i][j][k];
-
-                Cpp_k[i][j][k] = a * std::conj(a); // |Fpos|^2
-                Cnn_k[i][j][k] = b * std::conj(b); // |Fneg|^2
-                Cpn_k[i][j][k] = a * std::conj(b); // Kreuz
-            }
-        }
-    }
-
-    // Rücktransformation ins Real-Space
-    auto Cxx_pp = applyIFFT3D(Cpp_k, n_, 1.0);
-    auto Cxx_nn = applyIFFT3D(Cnn_k, n_, 1.0);
-    auto Cxx_pn = applyIFFT3D(Cpn_k, n_, 1.0);
-
-    std::cout << "3D correlation maps computed." << std::endl;
-
-    return {Cxx_pp, Cxx_nn, Cxx_pn};
 }
 
 
